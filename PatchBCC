@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 ################################################################################
-# $Id: PatchBCC,v 1.2 2001/05/14 12:16:47 danielritz Exp $
+# $Id: PatchBCC,v 1.4 2001/06/24 13:14:31 danielritz Exp $
 #
 # Copyright (c) 2001 by Daniel Ritz
 ################################################################################
@@ -11,9 +11,9 @@
 # You can donwload a free copy of BCC55 at
 #   ftp://ftpd.borland.com/download/bcppbuilder/freecommandLinetools.exe
 #
-# In order to compile with Borland compiler you need dmake or pmake:
-#     http://www.cpan.org/authors/id/GSAR/dmake-4.1pl1-win32.zip
-# or  http://www.cpan.org/authors/id/NI-S/Make-1.00.tar.gz
+# In order to compile with Borland compiler you need pmake:
+#   http://www.cpan.org/authors/id/NI-S/Make-1.00.tar.gz
+# dmake would work too (building) but has a problem creating PPD file
 ################################################################################
 # What Patch_BCC does:
 # = in Config.pm
@@ -32,7 +32,7 @@ use ExtUtils::MakeMaker qw(prompt);
 
 # show message
 print "\nPatch_BCC - Patch for Config.pm for use with Borland C++ compiler";
-print "\n  Don't use ...\bin when specifing the compiler directory!";
+print "\n  Don't use ...\\bin when specifing the compiler directory!";
 print "\n  [Ctrl]+[c] to abort\n";
 
 # determine Path of Config.pm script

@@ -1,5 +1,5 @@
 
-#   $Id: Makefile.PL,v 1.12 2001/05/13 22:25:46 danielritz Exp $
+#   $Id: Makefile.PL,v 1.15 2001/07/13 08:48:14 danielritz Exp $
 #
 #   Copyright (c) 1999-2001 Edwin Pratomo
 #
@@ -151,8 +151,13 @@ sub make_test_conf
 
   die "Must specify a test database" unless $path;
 
+  #PFW - isql on windows doesn't seem to work without the localhost in the db path
+  my $hostpath = $path;
+  if ($path =~ /^localhost:(.+)/) {
+    $hostpath = $1;
+  }
   # if DB doesn't exist ask for creation
-  unless (-f $path) 
+  unless (-f $hostpath) 
   {
     print <<"EOM";
 Can't find $path
@@ -223,8 +228,13 @@ sub create_test_db
     die "Unable to execute isql. Aborting..";
   }
   
+  #PFW - isql on windows doesn't seem to work without the localhost in the db path
+  my $hostpath = $path;
+  if ($path =~ /^localhost:(.+)/) {
+    $hostpath = $1;
+  }
   # if test db directory doesn't exist -> try to create
-  my $dir = dirname $path;
+  my $dir = dirname $hostpath;
   unless (-d $dir) 
   {
     print "Can't find $dir. Trying to mkdir..\n";
@@ -280,35 +290,55 @@ my %MakeParams = (
   'realclean'     => '*.xsi test.conf',
 );
 
-
 # the OS specific build environment setup
 my $os = $Config::Config{'osname'};
 if ($os eq 'MSWin32')
 {
-  # Why does software development on Windows
-  # have to be so difficult!?
+  # set up PPM package parameters
+  $MakeParams{'AUTHOR'}   = 'Edwin Pratomo (edpratomo@users.sourceforge.net'; 
+  $MakeParams{'ABSTRACT'} = 'DBD::InterBase is a DBI driver for InterBase, written using InterBase C API.';
     
+  my $vc_dir = '';
   if ($Config::Config{'cc'} eq "cl") 
   {
-    # Microsoft Visual C++ compiler
-    my $VC_PATH = dir_choice("MS VC++ directory",
-      [qw(c:/Progra~1/MICROS~2.NET/Vc7 C:/Progra~1/DevStudio/Vc)],
-      [qw(bin/cl.exe)]);
-    unless(-x $VC_PATH)
+    # try to find Microsoft Visual C++ compiler
+    eval 
     {
+      require Win32::TieRegistry;
+      Win32::TieRegistry->import('$Registry');
+      $Registry->Delimiter("/");
+
+      my $sw = $Registry->{"LMachine/Software/"};
+
+
+
+      # We have to check more than one keys, because different
+      # releases of Visual C++ have used different key hierarchies.
+      my $key 
+        = $sw->{"Microsoft/VisualStudio/6.0/Setup/Microsoft Visual C++"} ||
+          $sw->{"Microsoft/VisualStudio/7.0/Setup/VC"};
+
+      if (defined($key)) 
+      { 
+        $vc_dir = $key->{"/ProductDir"}; 
+      }
+    };
+    my @vc_dirs = ($vc_dir . "/bin");
+
+    my $VC_PATH = dir_choice("Visual C++ directory", [@vc_dirs], [qw(cl.exe)]);
+
+    unless (-x $VC_PATH){
       carp "I can't find your MS VC++ installation.\nDBD::InterBase cannot build.\n";
       exit 1;
     }
+
     my $vc_inc = $VC_PATH . "/include"; 
     my $vc_lib = $VC_PATH . "/lib"; 
 
     $INC .= " -I\"$vc_inc\"";
 
-    my $ib_lib = dir_choice("Interbase lib directory",
-      [qw(c:/Progra~1/InterB~1/InterB~1/SDK/lib_ms 
-          c:/Progra~1/Borland/InterB~1/SDK/lib_ms), 
-          "$ib_lib_dir\\lib_ms"],
-      [qw(gds32_ms.lib)]);
+    my $ib_lib = dir_choice("Interbase lib directory", [$ib_lib_dir . "lib_ms"],
+                            [qw(gds32_ms.lib)]);
 
     my $cur_libs = $Config::Config{'libs'} ;
     my $cur_lddlflags = $Config::Config{'lddlflags'} ;
@@ -316,8 +346,8 @@ if ($os eq 'MSWin32')
     eval "
     sub MY::const_loadlibs {
     '
-LDLOADLIBS = $ib_lib/gds32_ms.lib $ib_lib/ib_util_ms.lib $cur_libs
-LDDLFLAGS = /LIBPATH:$vc_lib $cur_lddlflags
+LDLOADLIBS = \"$ib_lib/gds32_ms.lib\" \"$ib_lib/ib_util_ms.lib\" $cur_libs
+LDDLFLAGS = /LIBPATH:\"$vc_lib\" $cur_lddlflags
     '
     } ";
   } 
@@ -337,7 +367,7 @@ LDDLFLAGS = /LIBPATH:$vc_lib $cur_lddlflags
     }
 
     my $bcc_inc = $BCC_PATH . "include"; 
-    $MakeParams{'CCFLAGS'}    = '-a4 -DWIN32 -DNO_STRICT';
+    $MakeParams{'CCFLAGS'}    = '-a4 -w- -DWIN32 -DNO_STRICT -DNDEBUG -D_CONSOLE -DHAVE_DES_FCRYPT -DPERL_IMPLICIT_CONTEXT -DPERL_IMPLICIT_SYS -DPERL_MSVCRT_READFIX';
     $MakeParams{'OPTIMIZE'}   = "-O2";
     $MakeParams{'INC'}       .= " -I\"$bcc_inc\"";
 

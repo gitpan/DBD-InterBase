@@ -1,5 +1,5 @@
 /* 
-   $Id: InterBase.xs,v 1.14 2001/06/07 11:26:08 edpratomo Exp $ 
+   $Id: InterBase.xs,v 1.15 2001/08/01 00:49:30 danielritz Exp $ 
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -113,101 +113,142 @@ set_tx_param(dbh, ...)
     tpb = tmp_tpb;
     *tpb++ = isc_tpb_version3;
     
-    for (i = 1; i < items; i += 2) {
-        tx_key = SvPV(ST(i), len);
-        if (strEQ(tx_key, "-access_mode")) {
-            tx_val = SvPV(ST(i + 1), len);
-            if (strEQ(tx_val, "read_write")) {
-                *tpb++ = isc_tpb_write;             
-            } else if (strEQ(tx_val, "read_only")) {
-                *tpb++ = isc_tpb_read;
-            } else {
-                safefree(tmp_tpb);
-                croak("Unknown transaction parameter %s", tx_val);
-            }
-        } else if (strEQ(tx_key, "-isolation_level")) {
-            if (SvROK(ST(i + 1)) && SvTYPE( SvRV(ST(i + 1)) ) == SVt_PVAV) {
-                av = (AV*)SvRV(ST(i + 1));
-
-                /* sanity check */
-                for (j = 0; j < av_len(av); j++) {
-                    sv = (SV*)SvRV(*av_fetch(av, j, FALSE));
-                    if ( strEQ( SvPV(sv, PL_na), "read_committed" )) {
-                        rc = 1;
-                        *tpb++ = isc_tpb_read_committed;
-                    }
-                }
-
-                if (!rc) { 
-                    safefree(tmp_tpb);
-                    croak("Invalid -isolation_level value");
-                }
-
-                for (j = 0; j < av_len(av); j++) {
-                    sv = (SV*)SvRV(*av_fetch(av, j, FALSE));
-                    if ( strEQ( SvPV(sv, PL_na), "record_version" )) {
-                        *tpb++ = isc_tpb_rec_version;
-                    } else if (strEQ( SvPV(sv, PL_na), "no_record_version" )) {
-                        *tpb++ = isc_tpb_no_rec_version;
-                    }
-                }
-
-            } else {
-                tx_val = SvPV(ST(i + 1), len);
-                if (strEQ(tx_val, "read_committed")) {
-                    *tpb++ = isc_tpb_read_committed;
-                } else if (strEQ(tx_val, "snapshot")) {
-                    *tpb++ = isc_tpb_concurrency;
-                } else if (strEQ(tx_val, "snapshot_table_stability")) {
-                    *tpb++ = isc_tpb_consistency;
-                }
-            }
-        } else if (strEQ(tx_key, "-lock_resolution")) {
-            tx_val = SvPV(ST(i + 1), len);
-            if (strEQ(tx_val, "wait")) {
-                *tpb++ = isc_tpb_wait;
-            } else if (strEQ(tx_val, "no_wait")) {
-                *tpb++ = isc_tpb_nowait;
-            } else {
-                safefree(tmp_tpb);
-                croak("Unknown transaction parameter %s", tx_val);
-            }
-        } else if (strEQ(tx_key, "-reserving")) {
-            if (SvROK(ST(i + 1)) && SvTYPE( SvRV(ST(i + 1)) ) == SVt_PVAV) {
-                av = (AV*)SvRV(ST(i + 1));
-                for (j = 0; j < av_len(av); j++) {
-                    sv = *av_fetch(av, j, FALSE);
-                    if (SvROK(sv) && SvTYPE(sv) == SVt_PVHV) {
-                        hv = (HV*)SvRV(sv);
-                        sv = *hv_fetch(hv, "for", 3, FALSE);
-
-                        if (strnEQ(SvPV(sv, PL_na), "shared", 6)) {
-                            *tpb++ = isc_tpb_shared;
-                        }
-
-                        if (strnEQ(SvPV(sv, PL_na), "protected", 9)) {
-                            *tpb++ = isc_tpb_protected;
-                        }
-
-                        sv = *hv_fetch(hv, "table", 5, FALSE);
-    /* unfinished 
-                        
-    */
-                                                
-                    } else {
-                        safefree(tmp_tpb);
-                        croak("Invalid -reserving hashref value");
-                    }
-                }
-        
-            } else {
-                safefree(tmp_tpb);
-                croak("Invalid -reserving value");
-            }
-        } else {
-            safefree(tmp_tpb);
-            croak("Unknown transaction parameter %s", tx_key);
+    for (i = 1; i < items; i += 2) 
+    {
+      tx_key = SvPV(ST(i), len);
+      if (strEQ(tx_key, "-access_mode")) 
+      {
+        tx_val = SvPV(ST(i + 1), len);
+        if (strEQ(tx_val, "read_write")) 
+        {
+          *tpb++ = isc_tpb_write;             
+        } 
+        else if (strEQ(tx_val, "read_only")) 
+        {
+          *tpb++ = isc_tpb_read;
+        } 
+        else 
+        {
+          safefree(tmp_tpb);
+          croak("Unknown transaction parameter %s", tx_val);
         }
+      } 
+      else if (strEQ(tx_key, "-isolation_level")) 
+      {
+        if (SvROK(ST(i + 1)) && SvTYPE( SvRV(ST(i + 1)) ) == SVt_PVAV) 
+        {
+          av = (AV*)SvRV(ST(i + 1));
+
+          /* sanity check */
+          for (j = 0; j <= av_len(av); j++) 
+          {
+            svp = av_fetch(av, j, FALSE);
+            if ( strEQ( SvPV_nolen(*svp), "read_committed" )) 
+            {
+              rc = 1;
+              *tpb++ = isc_tpb_read_committed;
+            }
+          }
+
+          if (!rc) 
+          { 
+            safefree(tmp_tpb);
+            croak("Invalid -isolation_level value");
+          }
+
+          for (j = 0; j <= av_len(av); j++) 
+          {
+            svp = av_fetch(av, j, FALSE);
+            if ( strEQ( SvPV_nolen(*svp), "record_version" )) 
+            {
+              *tpb++ = isc_tpb_rec_version;
+            } 
+            else if (strEQ( SvPV_nolen(*svp), "no_record_version" )) 
+            {
+              *tpb++ = isc_tpb_no_rec_version;
+            }
+          }
+        } 
+        else 
+        {
+          tx_val = SvPV(ST(i + 1), len);
+          if (strEQ(tx_val, "read_committed")) 
+          {
+            *tpb++ = isc_tpb_read_committed;
+          } 
+          else if (strEQ(tx_val, "snapshot")) 
+          {
+            *tpb++ = isc_tpb_concurrency;
+          } 
+          else if (strEQ(tx_val, "snapshot_table_stability")) 
+          {
+            *tpb++ = isc_tpb_consistency;
+          }
+        }
+      } 
+      else if (strEQ(tx_key, "-lock_resolution")) 
+      {
+        tx_val = SvPV(ST(i + 1), len);
+        if (strEQ(tx_val, "wait")) 
+        {
+          *tpb++ = isc_tpb_wait;
+        } 
+        else if (strEQ(tx_val, "no_wait")) 
+        {
+          *tpb++ = isc_tpb_nowait;
+        } 
+        else 
+        {
+          safefree(tmp_tpb);
+          croak("Unknown transaction parameter %s", tx_val);
+        }
+      } 
+      else if (strEQ(tx_key, "-reserving")) 
+      {
+        if (SvROK(ST(i + 1)) && SvTYPE( SvRV(ST(i + 1)) ) == SVt_PVAV) 
+        {
+          av = (AV*)SvRV(ST(i + 1));
+          for (j = 0; j < av_len(av); j++) 
+          {
+            sv = *av_fetch(av, j, FALSE);
+            if (SvROK(sv) && SvTYPE(sv) == SVt_PVHV) 
+            {
+              hv = (HV*)SvRV(sv);
+              sv = *hv_fetch(hv, "for", 3, FALSE);
+
+              if (strnEQ(SvPV(sv, PL_na), "shared", 6)) 
+              {
+                *tpb++ = isc_tpb_shared;
+              }
+
+              if (strnEQ(SvPV(sv, PL_na), "protected", 9)) 
+              {
+                *tpb++ = isc_tpb_protected;
+              }
+
+              sv = *hv_fetch(hv, "table", 5, FALSE);
+              /* unfinished 
+                            
+              */                          
+            } 
+            else 
+            {
+              safefree(tmp_tpb);
+              croak("Invalid -reserving hashref value");
+            }
+          }
+        } 
+        else 
+        {
+          safefree(tmp_tpb);
+          croak("Invalid -reserving value");
+        }
+      } 
+      else 
+      {
+        safefree(tmp_tpb);
+        croak("Unknown transaction parameter %s", tx_key);
+      }
     }
 
     safefree(imp_dbh->tpb_buffer);

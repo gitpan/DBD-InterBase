@@ -1,4 +1,4 @@
-### $Id: FAQ.pm,v 1.4 2001/06/13 13:31:07 edpratomo Exp $
+### $Id: FAQ.pm,v 1.6 2001/08/01 01:14:22 danielritz Exp $
 ### DBD::InterBase Frequently Asked Questions POD
 ### 
 ### This document is Copyright (c)2000 Edwin Pratomo. All rights reserved.
@@ -28,7 +28,7 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.28 available in CPAN.
+C<DBD::InterBase> version 0.28.4 available on SourceForge.
 
 =head1 SQL Operations
 

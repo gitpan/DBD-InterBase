@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40alltypes.t,v 1.3 2001/04/19 14:56:06 edpratomo Exp $
+#   $Id: 40alltypes.t,v 1.4 2001/07/25 20:49:41 danielritz Exp $
 #
 #   This is a test for all data types handling.
 #
@@ -21,6 +21,8 @@ my $num_of_fields = 14;
 #
 use DBI;
 use vars qw($verbose);
+
+#DBI->trace(5, "40alltypes.txt");
 
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl") {
@@ -93,7 +95,7 @@ CREATE TABLE $table (
     A_TIMESTAMP  TIMESTAMP,
     A_DATE       DATE,
     A_TIME       TIME,
-    NUMERIC_AS_SMALLINT  NUMERIC(4,2),
+    NUMERIC_AS_SMALLINT  NUMERIC(4,3),
     NUMERIC_AS_INTEGER   NUMERIC(9,3),
     A_SIXTYFOUR  NUMERIC(18,3)
 )

@@ -1,5 +1,5 @@
 
-#   $Id: InterBase.pm,v 1.23 2001/06/13 13:31:53 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.26 2001/08/01 01:03:32 danielritz Exp $
 #
 #   Copyright (c) 1999-2001 Edwin Pratomo
 #
@@ -20,7 +20,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.28';
+$VERSION = '0.28.4';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -826,7 +826,7 @@ C<record_version> or C<no_record_version>, then they should be inside an
 anonymous array:
 
  $dbh->func( 
-    -isolation_level => ['read_committed', 'record_version']
+    -isolation_level => ['read_committed', 'record_version'],
     'set_tx_param'
  );
 

@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40bindparam.t,v 1.4 2001/04/19 14:56:06 edpratomo Exp $
+#   $Id: 40bindparam.t,v 1.6 2001/05/04 10:29:18 edpratomo Exp $
 #
 #   This is a skeleton test. For writing new tests, take this file
 #   and modify/extend it.
@@ -23,7 +23,7 @@ $test_password = '';
 use DBI ();
 use vars qw($COL_NULLABLE);
 
-#DBI->trace(3, "trace.txt");
+#DBI->trace(4, "trace.txt");
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl") {
     do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";

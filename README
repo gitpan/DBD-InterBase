@@ -1,6 +1,6 @@
 DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
-   $Id: README,v 1.6 2001/06/12 17:42:35 edpratomo Exp $
+   $Id: README,v 1.8 2001/06/24 13:22:27 danielritz Exp $
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -24,9 +24,11 @@ REQUIREMENTS:
         You can donwload a free copy of BCC55 at
           ftp://ftpd.borland.com/download/bcppbuilder/freecommandLinetools.exe
 
-        In order to compile with Borland compiler you need dmake or pmake:
-          http://www.cpan.org/authors/id/GSAR/dmake-4.1pl1-win32.zip
+        In order to compile with Borland compiler you need pmake:
           http://www.cpan.org/authors/id/NI-S/Make-1.00.tar.gz
+	dmake would work to (building) but has problems creating PPD file
+	  http://www.cpan.org/authors/id/GSAR/dmake-4.1pl1-win32.zip
+
 
       - or Microsoft VC++ 6.0 (tested by Edwin Pratomo)
 
@@ -45,7 +47,8 @@ REQUIREMENTS:
 
 
 BUILDING:
-  Win32 additional steps if you are using the Borland C++ compiler:
+  Win32 additional steps if you are using the Borland C++ compiler,
+  type 'pmake' not just 'make' to build test and install:
     perl PatchBCC
 
   To Configure and build the DBD:

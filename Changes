@@ -1,7 +1,21 @@
 Revision history for Perl extension DBD::InterBase.
 
-0.01  Wed Apr 26 16:45:07 2000
-	- original version; created by h2xs 1.19
+$Id: Changes,v 1.14 2001/08/01 01:23:35 danielritz Exp $
+
+
+August 1 2001
+* fix set_txt_param crashes perl, by danielritz
+* always rollback open transactions on disconnect (see source), by danielritz
+
+July 24 2001
+* fix in bind_param for numeric values, by danielritz
+
+July 15 2001
+* fix repeated execute() in AutoCommit mode, by danielritz
+
+July 13 2001
+* Fix for compile with ActiveState Build 626+ and BCC, by danielritz
+* Fix to fetching blob field with zero maximum segment length
 
 June 12 2001
 * Fixed to buffer overflow in ib_fill_isqlda, by danielritz.
