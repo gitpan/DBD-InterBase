@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-#   $Id: 00base.t,v 1.1.1.1 2000/07/31 09:13:44 edpratomo Exp $
+#   $Id: 00base.t,v 1.2 2001/04/19 14:56:06 edpratomo Exp $
 #
 #   This is the base test, tries to install the drivers. Should be
 #   executed as the very first test.
@@ -13,10 +13,10 @@
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl") {
     do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
-			   exit 10;
-		      }
+               exit 10;
+              }
     if ($mdriver ne '') {
-	last;
+    last;
     }
 }
 if ($verbose) { print "Driver is $mdriver\n"; }
@@ -42,7 +42,7 @@ $drh = DBI->install_driver($mdriver);
 if ($drh->{Version}) {
     print "ok 5\n";
     if ($verbose) {
-	print "Driver version is ", $drh->{Version}, "\n";
+    print "Driver version is ", $drh->{Version}, "\n";
     }
 }
 

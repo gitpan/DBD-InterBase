@@ -136,10 +136,11 @@ while (Testing()) {
     Test($state or $dbh->commit)
     or DbiError($dbh->err, $dbh->errstr);
 
-    #
-    #   Finally disconnect.
-    #
-    Test($state or $dbh->disconnect())
-	   or DbiError($dbh->err, $dbh->errstr);
+    #  NUM_OF_FIELDS should be zero (Non-Select)
+    Test($state or ($cursor->{'NUM_OF_FIELDS'} == 0))
+    or !$verbose or printf("NUM_OF_FIELDS is %s, not zero.\n",
+                   $cursor->{'NUM_OF_FIELDS'});
+
+    Test($state or (undef $cursor) or 1);
 
 }

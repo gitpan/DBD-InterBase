@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.9 2001/02/12 18:24:31 edpratomo Exp $
+   $Id: dbdimp.h,v 1.13 2001/04/19 15:06:53 edpratomo Exp $
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -27,25 +27,25 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 
 /* conflicts */
 
-#undef	SQL_CHAR
-#undef	SQL_NUMERIC
-#undef	SQL_DECIMAL
-#undef	SQL_INTEGER
-#undef	SQL_SMALLINT
-#undef	SQL_FLOAT
-#undef	SQL_REAL
-#undef	SQL_DOUBLE
+#undef  SQL_CHAR
+#undef  SQL_NUMERIC
+#undef  SQL_DECIMAL
+#undef  SQL_INTEGER
+#undef  SQL_SMALLINT
+#undef  SQL_FLOAT
+#undef  SQL_REAL
+#undef  SQL_DOUBLE
 #undef  SQL_DATE
 #undef  SQL_TIME
 #undef  SQL_TIMESTAMP
-#undef	SQL_VARCHAR
+#undef  SQL_VARCHAR
 
 #include <ibase.h>
 
 /* defines */
 
-#define IB_ALLOC_FAIL 	2	
-#define IB_FETCH_ERROR	1
+#define IB_ALLOC_FAIL   2   
+#define IB_FETCH_ERROR  1
 
 #ifndef ISC_STATUS_LENGTH
 #define ISC_STATUS_LENGTH 20
@@ -55,10 +55,10 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 # define SvPV_nolen(sv) SvPV(sv, na)
 #endif
 
-#define DPB_FILL_BYTE(dpb, byte)			\
-    {							\
-	*dpb = byte;				\
-	dpb += 1;					\
+#define DPB_FILL_BYTE(dpb, byte)            \
+    {                           \
+    *dpb = byte;                \
+    dpb += 1;                   \
     }
 
 /*
@@ -68,32 +68,40 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
  * *((int *)dpb) = isc_vax_integer((char *) &integer, 4); \
  */
 
-#define DPB_FILL_INTEGER(dpb, integer)			\
-    {							\
-	int tmp;					\
-	*(dpb) = 4;					\
-	dpb += 1;					\
-    tmp = isc_vax_integer((char *) &integer, 4); \
+/*
+ * 2001-04-15 - Daniel Ritz: fix in isc_vax_integer call. Now using reference
+ * to tmp instead of reference to integer because if inter is declared as short
+ * InterBase reads to much memory resulting in unexpected values. Now it works
+ * un Solaris8/SPARC
+ */
+
+#define DPB_FILL_INTEGER(dpb, integer)          \
+    {                           \
+    int tmp;                    \
+    tmp = integer;                                   \
+    *(dpb) = 4;                 \
+    dpb += 1;                   \
+    tmp = isc_vax_integer((char *) &tmp, 4); \
     memcpy(dpb,&tmp,sizeof(tmp));                \
-	dpb += 4;					\
+    dpb += 4;                   \
     }
-#define DPB_FILL_STRING(dpb, string)			\
-    {							\
-	char l = strlen(string) & 0xFF;			\
-	*(dpb) = l;					\
-	dpb += 1;					\
-	strncpy(dpb, string, (size_t) l);		\
-	dpb += l;					\
+#define DPB_FILL_STRING(dpb, string)            \
+    {                           \
+    char l = strlen(string) & 0xFF;         \
+    *(dpb) = l;                 \
+    dpb += 1;                   \
+    strncpy(dpb, string, (size_t) l);       \
+    dpb += l;                   \
     }
 
-#define BLOB_SEGMENT	    (256)
+#define BLOB_SEGMENT        (256)
 #define MAX_BLOB_SEGMENT    (80)
 #define DEFAULT_SQL_DIALECT (1)
 #define INPUT_XSQLDA        (1)
 #define OUTPUT_XSQLDA       (0)
 
-#define SUCCESS		        (0)
-#define FAILURE		        (-1)
+#define SUCCESS             (0)
+#define FAILURE             (-1)
 
 /*
  * Hardcoded limit on the length of a Blob that can be fetched into a scalar.
@@ -111,34 +119,34 @@ typedef struct imp_fbh_st imp_fbh_t;
 */
 
 struct imp_drh_st {
-	dbih_drc_t com;     /* MUST be first element in structure   */
+    dbih_drc_t com;     /* MUST be first element in structure   */
 };
 
 /* Define dbh implementor data structure */
 struct imp_dbh_st {
-	dbih_dbc_t 	com;                /* MUST be first element in structure   */
-    isc_db_handle	db;
-	isc_tr_handle	tr;
-	int				init_commit;	/* takes DBD::Pg's route */
-    char ISC_FAR    *tpb_buffer;	/* transaction parameter buffer */
-    unsigned short	tpb_length;		/* length of tpb_buffer */
-    unsigned short	sqldialect;		/* default sql dialect */
+    dbih_dbc_t  com;                /* MUST be first element in structure   */
+    isc_db_handle   db;
+    isc_tr_handle   tr;
+    int             init_commit;    /* takes DBD::Pg's route */
+    char ISC_FAR    *tpb_buffer;    /* transaction parameter buffer */
+    unsigned short  tpb_length;     /* length of tpb_buffer */
+    unsigned short  sqldialect;     /* default sql dialect */
 };
 
 /* Define sth implementor data structure */
 struct imp_sth_st {
-	dbih_stc_t  com;                /* MUST be first element in structure   */
-    isc_stmt_handle	stmt;
-    XSQLDA *	out_sqlda;			/* for storing select-list items */
-    XSQLDA *	in_sqlda;			/* for storing placeholder values */
-    char *		cursor_name;
-	long		type; 				/* statement type */
-	int			done_desc;			/* is the statement already dbd_describe()-ed? */
-	char		count_item;
-	int			fetched;			/* number of fetched rows */
-	char ISC_FAR    *ib_dateformat;
-	char ISC_FAR    *ib_timestampformat;
-	char ISC_FAR    *ib_timeformat;
+    dbih_stc_t  com;                /* MUST be first element in structure   */
+    isc_stmt_handle stmt;
+    XSQLDA *    out_sqlda;          /* for storing select-list items */
+    XSQLDA *    in_sqlda;           /* for storing placeholder values */
+    char *      cursor_name;
+    long        type;               /* statement type */
+    int         done_desc;          /* is the statement already dbd_describe()-ed? */
+    char        count_item;
+    int         fetched;            /* number of fetched rows */
+    char ISC_FAR    *ib_dateformat;
+    char ISC_FAR    *ib_timestampformat;
+    char ISC_FAR    *ib_timeformat;
 };
 
 typedef struct vary {

@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40numrows.t,v 1.1.1.1 2000/07/31 09:13:49 edpratomo Exp $
+#   $Id: 40numrows.t,v 1.3 2001/04/19 14:56:06 edpratomo Exp $
 #
 #   This tests, whether the number of rows can be retrieved.
 #
@@ -18,24 +18,24 @@ $test_password = '';
 #   Include lib.pl
 #
 use DBI;
-#DBI->trace(4, "trace.txt");
+#DBI->trace(2, "trace.txt");
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl", "DBD-~~dbd_driver~~/t/lib.pl") {
     do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
-			   exit 10;
-		      }
+               exit 10;
+              }
     if ($mdriver ne '') {
-	last;
+    last;
     }
 }
 
 sub ServerError() {
     print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
-	"\tEither your server is not up and running or you have no\n",
-	"\tpermissions for acessing the DSN $test_dsn.\n",
-	"\tThis test requires a running server and write permissions.\n",
-	"\tPlease make sure your server is running and you have\n",
-	"\tpermissions, then retry.\n");
+    "\tEither your server is not up and running or you have no\n",
+    "\tpermissions for acessing the DSN $test_dsn.\n",
+    "\tThis test requires a running server and write permissions.\n",
+    "\tPlease make sure your server is running and you have\n",
+    "\tpermissions, then retry.\n");
     exit 10;
 }
 
@@ -44,7 +44,7 @@ sub TrueRows($) {
     my ($sth) = @_;
     my $count = 0;
     while ($sth->fetchrow_arrayref) {
-	++$count;
+    ++$count;
     }
     $count;
 }
@@ -58,23 +58,23 @@ while (Testing()) {
     #
     #   Connect to the database
     Test($state or ($dbh = DBI->connect($test_dsn, $test_user,
-					$test_password)))
-	or ServerError();
+                    $test_password)))
+    or ServerError();
 
     #
     #   Find a possible new table name
     #
     Test($state or ($table = FindNewTable($dbh)))
-	   or DbiError($dbh->err, $dbh->errstr);
+       or DbiError($dbh->err, $dbh->errstr);
 
     #
     #   Create a new table; EDIT THIS!
     #
     Test($state or ($def = TableDefinition($table,
-					   ["id",   "INTEGER",  4, 0],
-					   ["name", "CHAR",    64, 0]),
-		    $dbh->do($def)))
-	   or DbiError($dbh->err, $dbh->errstr);
+                       ["id",   "INTEGER",  4, 0],
+                       ["name", "CHAR",    64, 0]),
+            $dbh->do($def)))
+       or DbiError($dbh->err, $dbh->errstr);
 
 
     #
@@ -85,21 +85,21 @@ while (Testing()) {
     #   number of rows affected by the statement will be returned.
     #
     Test($state or $dbh->do("INSERT INTO $table"
-			    . " VALUES( 1, 'Alligator Descartes' )"))
-	   or DbiError($dbh->err, $dbh->errstr);
+                . " VALUES( 1, 'Alligator Descartes' )"))
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or ($cursor = $dbh->prepare("SELECT * FROM $table"
-					   . " WHERE id = 1")))
-	   or DbiError($dbh->err, $dbh->errstr);
+                       . " WHERE id = 1")))
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or $cursor->execute)
            or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or ($numrows = $cursor->rows) == 1  or  ($numrows == -1))
-	or ErrMsgF("Expected 1 rows, got %s.\n", $numrows);
+    or ErrMsgF("Expected 1 rows, got %s.\n", $numrows);
 
     Test($state or ($numrows = TrueRows($cursor)) == 1)
-	or ErrMsgF("Expected to fetch 1 rows, got %s.\n", $numrows);
+    or ErrMsgF("Expected to fetch 1 rows, got %s.\n", $numrows);
 
     Test($state or $cursor->finish)
            or DbiError($dbh->err, $dbh->errstr);
@@ -107,46 +107,46 @@ while (Testing()) {
     Test($state or undef $cursor or 1);
 
     Test($state or $dbh->do("INSERT INTO $table"
-			    . " VALUES( 2, 'Jochen Wiedmann' )"))
-	   or DbiError($dbh->err, $dbh->errstr);
+                . " VALUES( 2, 'Jochen Wiedmann' )"))
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or ($cursor = $dbh->prepare("SELECT * FROM $table"
-					    . " WHERE id >= 1")))
-	   or DbiError($dbh->err, $dbh->errstr);
+                        . " WHERE id >= 1")))
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or $cursor->execute)
-	   or DbiError($dbh->err, $dbh->errstr);
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or ($numrows = $cursor->rows) == 2  or  ($numrows == -1))
-	or ErrMsgF("Expected 2 rows, got %s.\n", $numrows);
+    or ErrMsgF("Expected 2 rows, got %s.\n", $numrows);
 
     Test($state or ($numrows = TrueRows($cursor)) == 2)
-	or ErrMsgF("Expected to fetch 2 rows, got %s.\n", $numrows);
+    or ErrMsgF("Expected to fetch 2 rows, got %s.\n", $numrows);
 
     Test($state or $cursor->finish)
-	   or DbiError($dbh->err, $dbh->errstr);
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or undef $cursor or 1);
 
     Test($state or $dbh->do("INSERT INTO $table"
-			    . " VALUES(3, 'Tim Bunce')"))
-	   or DbiError($dbh->err, $dbh->errstr);
+                . " VALUES(3, 'Tim Bunce')"))
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or ($cursor = $dbh->prepare("SELECT * FROM $table"
-					    . " WHERE id >= 2")))
-	   or DbiError($dbh->err, $dbh->errstr);
+                        . " WHERE id >= 2")))
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or $cursor->execute)
-	   or DbiError($dbh->err, $dbh->errstr);
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or ($numrows = $cursor->rows) == 2  or  ($numrows == -1))
-	or ErrMsgF("Expected 2 rows, got %s.\n", $numrows);
+    or ErrMsgF("Expected 2 rows, got %s.\n", $numrows);
 
     Test($state or ($numrows = TrueRows($cursor)) == 2)
-	or ErrMsgF("Expected to fetch 2 rows, got %s.\n", $numrows);
+    or ErrMsgF("Expected to fetch 2 rows, got %s.\n", $numrows);
 
     Test($state or $cursor->finish)
-	   or DbiError($dbh->err, $dbh->errstr);
+       or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or undef $cursor or 1);
 
@@ -154,6 +154,6 @@ while (Testing()) {
     #   Finally drop the test table.
     #
     Test($state or $dbh->do("DROP TABLE $table"))
-	   or DbiError($dbh->err, $dbh->errstr);
+       or DbiError($dbh->err, $dbh->errstr);
 
 }

@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 61settx.t,v 1.1 2001/03/24 14:02:41 edpratomo Exp $
+#   $Id: 61settx.t,v 1.2 2001/04/19 14:42:39 edpratomo Exp $
 #
 #   This is a test for set_tx_param() private method.
 #
@@ -85,7 +85,7 @@ while (Testing()) {
         'set_tx_param'))
     or DbiError($dbh2->err, $dbh2->errstr);
 
-    DBI->trace(1, "trace.txt");
+#    DBI->trace(1, "trace.txt");
     {
         local $dbh1->{AutoCommit} = 0;
         local $dbh2->{PrintError} = 0;

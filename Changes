@@ -3,6 +3,13 @@ Revision history for Perl extension DBD::InterBase.
 0.01  Wed Apr 26 16:45:07 2000
 	- original version; created by h2xs 1.19
 
+April 19 2001
+* Fix to dbdimp.h by Daniel Ritz. 
+* Nullify var->sqldata and tpb_buffer when cleaning up. 
+
+April 18 2001
+* Now works correctly with negative INT64 values
+
 March 24 2001
 * Added private method set_tx_param() for controlling transaction parameters
   (experimental)

@@ -1,5 +1,5 @@
 /* 
-   $Id: dbdimp.c,v 1.23 2001/03/24 03:22:53 edpratomo Exp $ 
+   $Id: dbdimp.c,v 1.26 2001/04/19 14:39:25 edpratomo Exp $ 
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -120,6 +120,7 @@ void ib_cleanup_st_execute (imp_sth_t *imp_sth)
         for (i = imp_sth->in_sqlda->sqln; i > 0; i--, var++)
         {
             safefree(var->sqldata);
+            var->sqldata = NULL;
             if (var->sqlind)
                 *(var->sqlind) = -1;    /* isNULL */
         }
@@ -277,8 +278,8 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     short dpb_length = 0;
     imp_dbh->db = 0L;
     imp_dbh->tr = 0L;
-	imp_dbh->tpb_buffer = NULL;
-	imp_dbh->tpb_length = 0;
+    imp_dbh->tpb_buffer = NULL;
+    imp_dbh->tpb_length = 0;
 
     /* 
      * Parse DSN and init values 
@@ -448,7 +449,7 @@ int dbd_db_ping(SV *dbh)
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
     /* 2001-02-14 - Peter Wilkinson:
-	 * the ms compiler didn't like the line that I've commented out:
+     * the ms compiler didn't like the line that I've commented out:
      * char db_items[] = {}; 
      */
     char buffer[100];
@@ -499,8 +500,10 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
             return FALSE;
         */
     }
-    if (imp_dbh->tpb_buffer) 
+    if (imp_dbh->tpb_buffer) {
         safefree(imp_dbh->tpb_buffer);
+        imp_dbh->tpb_buffer = NULL;
+    }
 
     isc_detach_database(status, &(imp_dbh->db));
     if (ib_error_check(dbh, status))
@@ -1030,7 +1033,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
     char info_buffer[20];
     int result = -2;    
     int row_count;
-    
+
     if (dbis->debug >= 2) 
         PerlIO_printf(DBILOGFP, "dbd_st_execute\n");
 
@@ -1073,14 +1076,14 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
         if (ib_error_check(sth, status)) {
             ib_cleanup_st_execute(imp_sth);
 
-			/* rollback any active transaction */
-	        if (DBIc_has(imp_dbh, DBIcf_AutoCommit) && imp_dbh->tr) {
-    	        /* rollback and close trans context */
-        	    isc_rollback_transaction(status, &(imp_dbh->tr));
-/*            	if (ib_error_check(sth, status))
-                	return FALSE;
+            /* rollback any active transaction */
+            if (DBIc_has(imp_dbh, DBIcf_AutoCommit) && imp_dbh->tr) {
+                /* rollback and close trans context */
+                isc_rollback_transaction(status, &(imp_dbh->tr));
+/*              if (ib_error_check(sth, status))
+                    return FALSE;
 */
-	        }
+            }
 
             return result;
         }
@@ -1133,14 +1136,11 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
         PerlIO_printf(DBILOGFP, "dbd_st_execute: out_sqlda OK.\n");
     } 
 
-//    fetch = 0;
-
     switch (imp_sth->type)
     {
         case isc_info_sql_stmt_select:
         case isc_info_sql_stmt_select_for_upd:
         case isc_info_sql_stmt_exec_procedure:
-//          fetch = 0;
             DBIc_NUM_FIELDS(imp_sth) = imp_sth->out_sqlda->sqld;
             DBIc_ACTIVE_on(imp_sth);
             break;
@@ -1340,9 +1340,8 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     sprintf(buf, "%Ld.%Ld",
                     (ISC_INT64) (q / (int)
                     pow(10.0, (double) -var->sqlscale)),
-                    (ISC_INT64) (q % (int)
-                    pow(10.0, (double) -var->sqlscale)));
-                    /* val = newSVpv(buf, 0); */
+                    (ISC_INT64) abs((q % (int)
+                    pow(10.0, (double) -var->sqlscale))));
                     sv_setpvn(sv, buf, strlen(buf));
                 }
                 break;
@@ -1787,7 +1786,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
 
     if (imp_sth->in_sqlda)
     {
-		int i;
+        int i;
         XSQLVAR *var = imp_sth->in_sqlda->sqlvar;
 
         if (dbis->debug >= 3) 
@@ -1987,9 +1986,10 @@ int dbd_st_STORE_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv, SV *valuesv)
             STRLEN  vl;
             char *  value = SvPV(valuesv, vl);
 
-            if (imp_sth->cursor_name != NULL)
+            if (imp_sth->cursor_name != NULL) {
                 safefree(imp_sth->cursor_name);
-
+                imp_sth->cursor_name = NULL;
+            }
             imp_sth->cursor_name = (char *)safemalloc(vl+1);
 
             if (imp_sth->cursor_name != NULL)
@@ -2347,7 +2347,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
             p += q / scale;     /* round p up by one if q overflows */
             q %= scale;     /* modulus if q overflows */
         }
-        *(ISC_INT64 *) (ivar->sqldata) = (ISC_INT64) (p * scale + q);
+        *(ISC_INT64 *) (ivar->sqldata) = (ISC_INT64) (p * scale + (p < 0 ? -q : q) );
         break;
     }
 #endif

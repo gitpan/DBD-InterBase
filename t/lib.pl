@@ -1,3 +1,4 @@
+#   Hej, Emacs, give us -*- perl mode here!
 #
 #   $Id: lib.pl,v 1.1.1.1 2000/07/31 09:14:03 edpratomo Exp $
 #

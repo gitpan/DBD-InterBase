@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40alltypes.t,v 1.2 2001/03/22 02:23:07 edpratomo Exp $
+#   $Id: 40alltypes.t,v 1.3 2001/04/19 14:56:06 edpratomo Exp $
 #
 #   This is a test for all data types handling.
 #
@@ -155,7 +155,7 @@ END_OF_QUERY
         or DbiError($cursor->err, $cursor->errstr);
     
     if (!$state) {
-	    my ($types, $names, $fields) = @{$cursor}{TYPE, NAME, NUM_OF_FIELDS};
+        my ($types, $names, $fields) = @{$cursor}{TYPE, NAME, NUM_OF_FIELDS};
 
         for (my $i = 0; $i < $fields; $i++) {
             Test($state or ( $is_match[$i]->($res) ))
@@ -164,8 +164,8 @@ END_OF_QUERY
         }
 
     } else {
-		for (1..$num_of_fields) { Test($state) }
-	}
+        for (1..$num_of_fields) { Test($state) }
+    }
 
     #
     #  Drop the test table

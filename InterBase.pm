@@ -1,5 +1,5 @@
 
-#   $Id: InterBase.pm,v 1.19 2001/03/25 01:44:11 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.20 2001/04/27 16:49:03 edpratomo Exp $
 #
 #   Copyright (c) 1999-2001 Edwin Pratomo
 #
@@ -20,7 +20,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.25.1';
+$VERSION = '0.26';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -816,10 +816,10 @@ Any of the above value can be changed using C<set_tx_param()>.
 =item B<set_tx_param> 
 
  $dbh->func( 
-	-access_mode     => 'read_write',
-	-isolation_level => 'read_committed',
-	-lock_resolution => 'wait',
-	'set_tx_param'
+    -access_mode     => 'read_write',
+    -isolation_level => 'read_committed',
+    -lock_resolution => 'wait',
+    'set_tx_param'
  );
 
 Valid value for C<-access_mode> is C<read_write>, or C<read_only>. 
@@ -830,7 +830,7 @@ C<record_version> or C<no_record_version>, then they should be inside an
 anonymous array:
 
  $dbh->func( 
-	-isolation_level => ['read_committed', 'record_version']
+    -isolation_level => ['read_committed', 'record_version']
     'set_tx_param'
  );
 
@@ -876,10 +876,7 @@ fetch() methods.
 =head2 Compatibility with DBI Extension modules 
 
 C<DBD::InterBase> is known to work with C<DBIx::Recordset> 0.21, and
-C<Apache::DBI> 0.87. DBI 1.14 has a subtle bug on C<fetchall_arrayref> method,
-when it is passed an empty hash ref. The patch is included here as 
-DBI.pm.diff, because it is required to make the driver work with 
-C<DBIx::Tree> 0.91. Yuri Vasiliev <I<yuri.vasiliev@targuscom.com>> reported 
+C<Apache::DBI> 0.87. Yuri Vasiliev <I<yuri.vasiliev@targuscom.com>> reported 
 successful usage with Apache::AuthDBI (part of C<Apache::DBI> 0.87 
 distribution).
 
@@ -888,10 +885,31 @@ C<Tie::DBI>. C<Tie::DBI> calls $dbh->prepare("LISTFIELDS $table_name") on
 which InterBase fails to parse. I think that the call should be made within 
 an eval block.
 
-=head2 Tested Platforms
+=head1 TESTED PLATFORMS
 
-Client: Linux, glibc-2.1.2, x86 egcs-1.1.2, kernel 2.2.12-20. 
-Server: InterBase 6.0 SS and Classic for Linux, InterBase 6.0 for Windows.
+=head2 Client
+
+=over 4
+
+=item Linux, glibc-2.1.2, x86 egcs-1.1.2, kernel 2.2.12-20. 
+
+=item FreeBSD
+
+=item SPARC Solaris
+
+=item Win32
+
+=back
+
+=head2 Server
+
+=over 4
+
+=item InterBase 6.0 SS and Classic for Linux
+
+=item InterBase 6.0 for Windows, FreeBSD, SPARC Solaris
+
+=back
 
 =head1 AUTHOR
 
@@ -901,6 +919,8 @@ Server: InterBase 6.0 SS and Classic for Linux, InterBase 6.0 for Windows.
 
 Partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
 DBD::mysql, and Edmund Mergl's DBD::Pg.
+
+Daniel Ritz <daniel_ritz@gmx.ch> works on SPARC Solaris port.
 
 =head1 BUGS
 
@@ -926,7 +946,6 @@ development days of this XS version.
 
 Michael Arnett <I<marnett@mediaone.net>>, Flemming Frandsen <I<dion@swamp.dk>>,
 Mike Shoyher <I<msh@e-labs.ru>>, Christiaan Lademann <I<cal@zls.de>> sent me 
-patches for the first version. Their code are still used in the current
-version, with or without some modification.
+patches for the first version. 
 
 =cut

@@ -1,30 +1,36 @@
-README
-Changes
-dbdimp.h
-dbdimp.c
 InterBase.h
-InterBase.pm
-InterBase.xs
-Makefile.PL
-MANIFEST
+Changes
 lib/Bundle/DBD/InterBase.pm
 lib/DBD/InterBase/FAQ.pm
-t/README        Tutorial for writing new t
-t/00base.t      base DBI driver test: Loads DBI and driver
-t/10dsnlist.t   Low level DBI driver test: List data sources
-t/20createdrop.t    Test for creating and dropping tables
-t/30insertfetch.t   Test for insert, fetch and delete of rows
-t/40bindparam.t Test of bind_col and bind_param methods
-t/40blobs.t     Test for working with blobs
-t/40doparam.t   Test for do() with params
-t/40listfields.t    Test for field oriented methods, e.g. NAME
-t/40nulls.t     Test for correct handling of NULL's
-t/40numrows.t   Test for row attributes, e.g. $sth->{rows}
-t/50chopblanks.t    Test for the 'ChopBlanks' attribute
-t/50commit.t    Test for commit, rollback and AutoCommit
-t/60leaks.t     Test script for various kinds of memory leaks
-t/lib.pl        Common declarations of the test suite
-t/ak-dbd.t      Miscellaneous DBI driver t
-t/dbdadmin.t    Check $dbh->ping and 'admin' methods
-t/InterBase.dbtest  Core of testing InterBase database access
-t/InterBase.mtest   Core of testing InterBase module
+InterBase.pm
+InterBase.xs
+MANIFEST
+Makefile.PL
+README
+dbdimp.c
+dbdimp.h
+t/00base.t
+t/10dsnlist.t
+t/20createdrop.t
+t/30insertfetch.t
+t/40alltypes.t
+t/40bindparam.t
+t/40blobs.t
+t/40cursor.t
+t/40doparam.t
+t/40listfields.t
+t/40nulls.t
+t/40numrows.t
+t/50chopblanks.t
+t/50commit.t
+t/60leaks.t
+t/61settx.t
+t/InterBase.dbtest
+t/InterBase.mtest
+t/README
+t/ak-dbd.t
+t/akmisc.t
+t/create.sql
+t/dbdadmin.t
+t/lib.pl
+t/skeleton.test
