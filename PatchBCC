@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 ################################################################################
-# $Id: PatchBCC,v 1.4 2001/06/24 13:14:31 danielritz Exp $
+# $Id: PatchBCC,v 1.5 2002/05/15 16:39:12 danielritz Exp $
 #
 # Copyright (c) 2001 by Daniel Ritz
 ################################################################################
@@ -123,9 +123,9 @@ rename($config_new, $config_old) || die "can't rename $config_new to $config_old
 ################################################################################
 
 # read the path form perlXX.lib
-my $libname = $Config{libpth};
+my $libname = $Config{archlib};
 $libname =~ s/"//g;
-$libname .= '\\' . $Config{libperl};
+$libname .= '\\CORE\\' . $Config{libperl};
 
 # move the old file to perlXX_coff.lib
 my $coffname = $libname;
@@ -135,7 +135,7 @@ $coffname =~ s/(.*).lib/$1_coff.lib/g;
 if (! -e $coffname)
 {
   # not done, so rename $libname to $coffname
-  rename($libname, $coffname) || die "can'r rename $libname to $coffname: $!";
+  rename($libname, $coffname) || die "can't rename $libname to $coffname: $!";
 
   # run the borland coff2omf utility
   system("\"$bcb_path\\bin\\coff2omf\"", $coffname, $libname) == 0 

@@ -1,6 +1,6 @@
 #   Hej, Emacs, give us -*- perl mode here!
 #
-#   $Id: lib.pl,v 1.1.1.1 2000/07/31 09:14:03 edpratomo Exp $
+#   $Id: lib.pl,v 1.3 2002/09/09 08:08:09 edpratomo Exp $
 #
 #   lib.pl is the file where database specific things should live,
 #   whereever possible. For example, you define certain constants
@@ -196,7 +196,7 @@ sub DbiError ($$) {
 
     my(@tables, $testtable, $listed);
 
-    $testtable = "testaa";
+    $testtable = "TESTAA";
     $listed = 0;
 
     sub FindNewTable($) {
@@ -234,8 +234,8 @@ sub DbiError ($$) {
 }
 
 
-sub ErrMsg (@_) { print (@_); }
-sub ErrMsgF (@_) { printf (@_); }
+sub ErrMsg (@) { print (@_); }
+sub ErrMsgF (@) { printf (@_); }
 
 
 1;

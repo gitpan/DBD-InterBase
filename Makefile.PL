@@ -1,7 +1,8 @@
 
-#   $Id: Makefile.PL,v 1.20 2002/04/04 02:52:05 edpratomo Exp $
+#   $Id: Makefile.PL,v 1.23 2002/08/12 16:04:26 danielritz Exp $
 #
 #   Copyright (c) 1999-2002 Edwin Pratomo
+#   Portions Copyright (c) 2001-2002  Daniel Ritz
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -168,7 +169,7 @@ sub make_test_conf
     unless (-f $hostpath)
     {
         print <<"EOM";
-Can't find $path
+Cannot find $path
 Trying to create the test database..
 Please enter a username with CREATE DATABASE permission.
 EOM
@@ -289,7 +290,7 @@ my %MakeParams = (
     'C'             => ['dbdimp.c'],
     'H'             => ['dbdimp.h', 'InterBase.h'],
     'CCFLAGS'       => '',
-    'INC'           => qq(-I$ib_inc -I${\locate_dbi_arch_dir()}),
+    'INC'           => qq(-I"$ib_inc" -I"${\locate_dbi_arch_dir()}"),
     'OBJECT'        => "InterBase.o dbdimp.o",
     'LIBS'          => [''],
     'OPTIMIZE'      => $Config::Config{'optimize'},
@@ -357,7 +358,7 @@ if ($os eq 'MSWin32')
         eval "
     sub MY::const_loadlibs {
     '
-LDLOADLIBS = \"$ib_lib/gds32_ms.lib\" \"$ib_lib/ib_util_ms.lib\" $cur_libs
+LDLOADLIBS = \"$ib_lib/gds32_ms.lib\" $cur_libs
 LDDLFLAGS = /LIBPATH:\"$vc_lib\" $cur_lddlflags
     '
     } ";

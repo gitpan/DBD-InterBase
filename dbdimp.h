@@ -1,7 +1,8 @@
 /*
-   $Id: dbdimp.h,v 1.25 2002/04/04 09:50:16 edpratomo Exp $
+   $Id: dbdimp.h,v 1.45 2002/08/12 16:04:26 danielritz Exp $
 
    Copyright (c) 1999-2002  Edwin Pratomo
+   Portions Copyright (c) 2001-2002  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -64,8 +65,14 @@ static const int DBI_SQL_BLOB       = SQL_BLOB;
 #undef  SQL_BLOB
 
 #include <ibase.h>
+#include <time.h>
 
 /* defines */
+
+/* is IB v6 API present? */
+#ifdef _ISC_TIMESTAMP_
+#  define IB_API_V6
+#endif
 
 #define IB_ALLOC_FAIL   2
 #define IB_FETCH_ERROR  1
@@ -78,44 +85,68 @@ static const int DBI_SQL_BLOB       = SQL_BLOB;
 #  define SvPV_nolen(sv) SvPV(sv, na)
 #endif
 
+#define FREE_SETNULL(ptr) \
+do {                      \
+    if (ptr)              \
+    {                     \
+        safefree(ptr);    \
+        ptr = NULL;       \
+    }                     \
+} while (0)
+
 #define DPB_FILL_BYTE(dpb, byte)  \
-{                                 \
+do {                              \
     *dpb = byte;                  \
     dpb += 1;                     \
-}
-
-/*
- * 2001-02-13 - Mike Shoyher: It's illegal to assign int to char pointer
- * on platforms where strict aligment is required (like SPARC or m68k). For
- * x86 it isn't important.
- * *((int *)dpb) = isc_vax_integer((char *) &integer, 4); \
- */
-
-/*
- * 2001-04-15 - Daniel Ritz: fix in isc_vax_integer call. Now using reference
- * to tmp instead of reference to integer because if integer is declared as short
- * InterBase reads too much memory resulting in unexpected values. Now it works
- * on Solaris8/SPARC
- */
+} while (0)
 
 #define DPB_FILL_INTEGER(dpb, integer)       \
-{                                            \
+do {                                         \
     int tmp = integer;                       \
     *(dpb) = 4;                              \
     dpb += 1;                                \
     tmp = isc_vax_integer((char *) &tmp, 4); \
     memcpy(dpb, &tmp, sizeof(tmp));          \
     dpb += 4;                                \
-}
+} while (0)
 
 #define DPB_FILL_STRING(dpb, string)   \
-{                                      \
+do {                                   \
     char l = strlen(string) & 0xFF;    \
     *(dpb) = l;                        \
     dpb += 1;                          \
     strncpy(dpb, string, (size_t) l);  \
     dpb += l;                          \
-}
+} while (0)
+
+
+#ifndef IB_API_V6
+#  define TIMESTAMP_FPSECS(value) \
+   (long)(((ISC_QUAD *)value)->isc_quad_low % 10000L)
+#  define TIMESTAMP_ADD_FPSECS(value, inc) \
+   ((ISC_QUAD *)value)->isc_quad_low += (inc % 10000L);
+#else
+#  define TIMESTAMP_FPSECS(value) \
+   (long)(((ISC_TIMESTAMP *)value)->timestamp_time % ISC_TIME_SECONDS_PRECISION)
+#  define TIMESTAMP_ADD_FPSECS(value, inc) \
+   ((ISC_TIMESTAMP *)value)->timestamp_time += (inc % ISC_TIME_SECONDS_PRECISION)
+
+#  define TIME_FPSECS(value) \
+   (long)((*(ISC_TIME *)value) % ISC_TIME_SECONDS_PRECISION)
+#  define TIME_ADD_FPSECS(value, inc) \
+   (*(ISC_TIME *)value) += (inc % ISC_TIME_SECONDS_PRECISION)
+#endif
+
+
+#ifndef NO_TRACE_MSGS
+#  define DBI_TRACE(level, args) \
+do {                             \
+    if (DBIS->debug >= level)    \
+        PerlIO_printf args ;     \
+} while (0)
+#else
+#  define DBI_TRACE(level, args) do {} while (0)
+#endif
 
 #define BLOB_SEGMENT        (256)
 #define DEFAULT_SQL_DIALECT (1)
@@ -132,35 +163,62 @@ static const int DBI_SQL_BLOB       = SQL_BLOB;
 
 #define MAX_SAFE_BLOB_LENGTH (1000000)
 
+#define MAX_EVENTS          15
+
 /****************/
 /* data types   */
 /****************/
 
+/* structs for event */
+typedef struct
+{
+    imp_dbh_t       *dbh;               /* pointer to parent dbh */
+    ISC_LONG        id;                 /* event id assigned by IB */
+    char ISC_FAR    *event_buffer;
+    char ISC_FAR    *result_buffer;
+    char ISC_FAR * ISC_FAR *names;      /* names of events of interest */
+    unsigned short  num;                /* number of events of interest */
+    short           epb_length;         /* length of bufers */
+    char            reinit;             /* buffer reinit flag */
+    SV              *perl_cb;           /* perl callback for this event */
+    char            cb_called;          /* true if a callback has been called */
+} IB_EVENT;
+
 /* Define driver handle data structure */
-struct imp_drh_st 
+struct imp_drh_st
 {
     dbih_drc_t com;     /* MUST be first element in structure */
 };
 
 /* Define dbh implementor data structure */
-struct imp_dbh_st 
+struct imp_dbh_st
 {
-    dbih_dbc_t      com;            /* MUST be first element in structure */
+    dbih_dbc_t      com;                /* MUST be first element in structure */
     isc_db_handle   db;
     isc_tr_handle   tr;
-    char ISC_FAR    *tpb_buffer;    /* transaction parameter buffer */
-    unsigned short  tpb_length;     /* length of tpb_buffer */
-    unsigned short  sqldialect;     /* default sql dialect */
-    short           soft_commit;    /* use soft commit ? */
-    short           soft_autocommit;/* use soft commit for AutoCommit = 1 ? */
+    char ISC_FAR    *tpb_buffer;        /* transaction parameter buffer */
+    unsigned short  tpb_length;         /* length of tpb_buffer */
+    unsigned short  sqldialect;         /* default sql dialect */
+    char            soft_commit;        /* use soft commit ? */
 
-    int       sth_ddl;              /* number of open DDL statments */
-    imp_sth_t *first_sth;           /* pointer to first statement */
-    imp_sth_t *last_sth;            /* pointer to last statement */
+    unsigned int    sth_ddl;            /* number of open DDL statments */
+    imp_sth_t       *first_sth;         /* pointer to first statement */
+    imp_sth_t       *last_sth;          /* pointer to last statement */
+
+#if defined(USE_THREADS) || defined(USE_ITHREADS) || defined(MULTIPLICITY)
+    void            *context;           /* perl context for threads / multiplicity */
+#endif
+
+    /* per dbh default strftime() formats */
+    char            *dateformat;
+#ifdef IB_API_V6
+    char            *timestampformat;
+    char            *timeformat;
+#endif
 };
 
 /* Define sth implementor data structure */
-struct imp_sth_st 
+struct imp_sth_st
 {
     dbih_stc_t      com;                /* MUST be first element in structure */
     isc_stmt_handle stmt;
@@ -168,28 +226,25 @@ struct imp_sth_st
     XSQLDA          *in_sqlda;          /* for storing placeholder values */
     char            *cursor_name;
     long            type;               /* statement type */
-    int             done_desc;          /* is the statement already dbd_describe()-ed? */
     char            count_item;
     int             fetched;            /* number of fetched rows */
-    char ISC_FAR    *ib_dateformat;
-    char ISC_FAR    *ib_timestampformat;
-    char ISC_FAR    *ib_timeformat;
 
+    char            *dateformat;
+#ifdef IB_API_V6
+    char            *timestampformat;
+    char            *timeformat;
+#endif
     imp_sth_t *prev_sth;                /* pointer to prev statement */
     imp_sth_t *next_sth;                /* pointer to next statement */
 };
 
 
-typedef struct vary 
+typedef struct vary
 {
     short vary_length;
     char  vary_string [1];
 } VARY;
 
-
-/* is imp_dbh in soft commit mode? */
-#define is_softcommit(idbh) ((DBIc_has(idbh, DBIcf_AutoCommit) && idbh->soft_autocommit) || \
-                            (!DBIc_has(idbh, DBIcf_AutoCommit) && idbh->soft_commit))
 
 /* These defines avoid name clashes for multiple statically linked DBD's */
 #define dbd_init            ib_init
@@ -210,7 +265,6 @@ typedef struct vary
 #define dbd_st_blob_read    ib_st_blob_read
 #define dbd_st_STORE_attrib ib_st_STORE_attrib
 #define dbd_st_FETCH_attrib ib_st_FETCH_attrib
-#define dbd_describe        ib_describe
 #define dbd_bind_ph         ib_bind_ph
 
 void    do_error _((SV *h, int rc, char *what));
@@ -218,9 +272,13 @@ void    do_error _((SV *h, int rc, char *what));
 void    dbd_init     _((dbistate_t *dbistate));
 void    dbd_preparse _((SV *sth, imp_sth_t *imp_sth, char *statement));
 int     dbd_describe _((SV *sth, imp_sth_t *imp_sth));
+int     dbd_db_ping   (SV *dbh);
 
-int ib_start_transaction (SV *h, imp_dbh_t *imp_dbh);
-int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh);
+int ib_error_check(SV *h, ISC_STATUS *status);
+
+int ib_start_transaction   (SV *h, imp_dbh_t *imp_dbh);
+int ib_commit_transaction  (SV *h, imp_dbh_t *imp_dbh);
+int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh);
 
 SV* dbd_db_quote(SV* dbh, SV* str, SV* type);
 

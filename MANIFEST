@@ -2,6 +2,7 @@ InterBase.h
 Changes
 lib/Bundle/DBD/InterBase.pm
 lib/DBD/InterBase/FAQ.pm
+lib/DBD/InterBase/GetInfo.pm
 InterBase.pm
 InterBase.xs
 MANIFEST
@@ -10,11 +11,13 @@ README
 dbdimp.c
 dbdimp.h
 PatchBCC
+typemap
 t/00base.t
 t/10dsnlist.t
 t/20createdrop.t
 t/30insertfetch.t
 t/40alltypes.t
+t/40datetime.t
 t/40bindparam.t
 t/40blobs.t
 t/40cursor.t
@@ -26,6 +29,7 @@ t/40numrows.t
 t/41numeric.t
 t/50chopblanks.t
 t/50commit.t
+t/60leaks.t
 t/61settx.t
 t/70nestedoff.t
 t/70nestedon.t

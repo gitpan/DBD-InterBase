@@ -1,7 +1,8 @@
 /*
-   $Id: dbdimp.c,v 1.69 2002/04/05 03:29:05 edpratomo Exp $
+   $Id: dbdimp.c,v 1.96 2002/08/12 16:04:26 danielritz Exp $
 
    Copyright (c) 1999-2002  Edwin Pratomo
+   Portions Copyright (c) 2001-2002  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -14,20 +15,24 @@
 
 DBISTATE_DECLARE;
 
-#define IB_SQLtimeformat(format, svp)                                 \
-{                                                                     \
+#define IB_SQLtimeformat(xxh, format, sv)                             \
+do {                                                                  \
     STRLEN len;                                                       \
-    char *buf = SvPV(*svp, len);                                      \
-    if ((format = (char*)safemalloc(sizeof(char)* (len +1))) == NULL) \
+    char *frmt = NULL;                                                \
+    char *buf = SvPV(sv, len);                                        \
+    if (len < 2 || len > 30)  break;                                  \
+    if ((frmt = (char*) safemalloc(sizeof(char)* (len + 1))) == NULL) \
     {                                                                 \
-        do_error(sth, 2, "Can't alloc SQL time format");              \
+        do_error(xxh, 2, "Can't alloc SQL time format");              \
         return FALSE;                                                 \
     }                                                                 \
-    strcpy(format, buf);                                              \
-}
+    strcpy(frmt, buf);                                                \
+    if (format) safefree(format);                                     \
+    format = frmt;                                                    \
+} while (0)
 
 #define IB_alloc_sqlda(sqlda, n)                             \
-{                                                            \
+do {                                                         \
     short len = n;                                           \
     if (sqlda)                                               \
     {                                                        \
@@ -39,7 +44,7 @@ DBISTATE_DECLARE;
     memset(sqlda, 0, XSQLDA_LENGTH(len));                    \
     sqlda->sqln = len;                                       \
     sqlda->version = SQLDA_VERSION1;                         \
-}
+} while (0)
 
 
 int create_cursor_name(SV *sth, imp_sth_t *imp_sth)
@@ -61,27 +66,6 @@ int create_cursor_name(SV *sth, imp_sth_t *imp_sth)
 }
 
 
-void dump_str(char *src, int len)
-{
-    int i;
-    PerlIO_printf(DBILOGFP, "Dumping string: ");
-    for (i = 0; i < len; i++)
-        fputc(src[i], DBILOGFP);
-}
-
-
-int dbd_describe(SV* sth, imp_sth_t *imp_sth)
-{
-    ISC_STATUS status[ISC_STATUS_LENGTH];
-
-    isc_dsql_describe(status, &(imp_sth->stmt), 1, imp_sth->out_sqlda);
-    if (ib_error_check(sth, status))
-        return FALSE;
-    imp_sth->done_desc = 1;
-    return TRUE;
-}
-
-
 void dbd_init(dbistate_t *dbistate)
 {
     DBIS = dbistate;
@@ -90,38 +74,13 @@ void dbd_init(dbistate_t *dbistate)
 
 void ib_cleanup_st_prepare (imp_sth_t *imp_sth)
 {
-    if (imp_sth->in_sqlda)
-    {
-        safefree(imp_sth->in_sqlda);
-        imp_sth->in_sqlda = NULL;
-    }
-
-    if (imp_sth->out_sqlda)
-    {
-        safefree(imp_sth->out_sqlda);
-        imp_sth->out_sqlda = NULL;
-    }
-
-    if (imp_sth->done_desc)
-        imp_sth->done_desc = 0;
-
-    if (imp_sth->ib_dateformat)
-    {
-        safefree(imp_sth->ib_dateformat);
-        imp_sth->ib_dateformat = NULL;
-    }
-
-    if (imp_sth->ib_timeformat)
-    {
-        safefree(imp_sth->ib_timeformat);
-        imp_sth->ib_timeformat = NULL;
-    }
-
-    if (imp_sth->ib_timestampformat)
-    {
-        safefree(imp_sth->ib_timestampformat);
-        imp_sth->ib_timestampformat = NULL;
-    }
+    FREE_SETNULL(imp_sth->in_sqlda);
+    FREE_SETNULL(imp_sth->out_sqlda);
+    FREE_SETNULL(imp_sth->dateformat);
+#ifdef IB_API_V6
+    FREE_SETNULL(imp_sth->timeformat);
+    FREE_SETNULL(imp_sth->timestampformat);
+#endif
 }
 
 
@@ -132,7 +91,7 @@ void ib_cleanup_st_execute (imp_sth_t *imp_sth)
         int i;
         XSQLVAR *var = imp_sth->in_sqlda->sqlvar;
 
-        for (i = imp_sth->in_sqlda->sqln; i > 0; i--, var++)
+        for (i = 0; i < imp_sth->in_sqlda->sqln; i++, var++)
         {
             safefree(var->sqldata);
             var->sqldata = NULL;
@@ -149,30 +108,28 @@ void do_error(SV *h, int rc, char *what)
     D_imp_xxh(h);
     SV *errstr = DBIc_ERRSTR(imp_xxh);
 
-    if (dbis->debug >= 2)
-    PerlIO_printf(DBILOGFP, "Entering do_error..\n");
+    DBI_TRACE(2, (DBILOGFP, "Entering do_error"));
 
     sv_setiv(DBIc_ERR(imp_xxh), (IV)rc);
     sv_setpv(errstr, what);
     DBIh_EVENT2(h, ERROR_event, DBIc_ERR(imp_xxh), errstr);
 
-    if (dbis->debug >= 2)
-       PerlIO_printf(DBILOGFP, "%s error %d recorded: %s\n", what, rc,
-                     SvPV(errstr,na));
+    DBI_TRACE(2, (DBILOGFP, "%s error %d recorded: %s\n", what, rc,
+                  SvPV(errstr,na)));
 }
 
 
 /* higher level error handling, check and decode status */
 int ib_error_check(SV *h, ISC_STATUS *status)
 {
-    long sqlcode;
-    char msg[1024], *pmsg;
-
-    ISC_STATUS *pvector = status;
-    pmsg = msg;
-
     if (status[0] == 1 && status[1] > 0)
     {
+        long sqlcode;
+        char msg[1024], *pmsg;
+
+        ISC_STATUS *pvector = status;
+        pmsg = msg;
+
         /* isc_interprete(msg, &pvector); */
 
         /* isc_sql_interprete doesn't work as expected */
@@ -180,7 +137,7 @@ int ib_error_check(SV *h, ISC_STATUS *status)
 
         if ((sqlcode = isc_sqlcode(status)) != 0)
         {
-            isc_sql_interprete(sqlcode, pmsg, 1024);
+            isc_sql_interprete((short) sqlcode, pmsg, 1024);
             while (*pmsg) pmsg++;
             *pmsg++ = '\n';
             *pmsg++ = '-';
@@ -226,6 +183,15 @@ static int ib2sql_type(int ibtype)
         case 481:
             return DBI_SQL_DOUBLE;
 
+#ifndef IB_API_V6
+        case SQL_DATE:
+        case 511:
+            return DBI_SQL_TIMESTAMP; /* this is correct! */
+#else /* V6.0/FB */
+        case SQL_TIMESTAMP:
+        case 511:
+            return DBI_SQL_TIMESTAMP;
+
         case SQL_TYPE_DATE:
         case 571:
             return DBI_SQL_DATE;
@@ -233,10 +199,7 @@ static int ib2sql_type(int ibtype)
         case SQL_TYPE_TIME:
         case 561:
             return DBI_SQL_TIME;
-
-        case SQL_TIMESTAMP:
-        case 511:
-            return DBI_SQL_TIMESTAMP;
+#endif /* !IB_API_V6 */
 
         case SQL_VARYING:
         case 449:
@@ -280,13 +243,6 @@ static int ib_sql_type(imp_sth_t *imp_sth, char *name, int sql_type)
 }
 
 
-int dbd_db_login(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char  *uid,
-                 char *pwd)
-{
-    return dbd_db_login6(dbh, imp_dbh, dbname, uid, pwd, Nullsv);
-}
-
-
 int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
                   char *pwd, SV *attr)
 {
@@ -309,22 +265,48 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
 
     STRLEN len; /* for SvPV */
 
-    bool  dbkey_scope   = 1;
+    char  dbkey_scope   = 1;
     short dpb_length    = 0;
-    int   buflen        = 0;   /* buffer size is dynamic */
+    unsigned int buflen = 0;   /* buffer size is dynamic */
     imp_dbh->db         = 0L;
     imp_dbh->tr         = 0L;
     imp_dbh->tpb_buffer = NULL;
     imp_dbh->tpb_length = 0;
     imp_dbh->sth_ddl    = 0;
 
-    /* use soft commit (isc_commit_retaining) */
-    imp_dbh->soft_commit     = 0; /* for autocommit == 0 */
-    imp_dbh->soft_autocommit = 0; /* for autocommit == 1 */
+    imp_dbh->soft_commit = 0; /* use soft commit (isc_commit_retaining)? */
+
+    /* default date/time formats */
+    imp_dbh->dateformat      = (char *) safemalloc(sizeof(char) * 3);
+#ifdef IB_API_V6
+    imp_dbh->timeformat      = (char *) safemalloc(sizeof(char) * 3);
+    imp_dbh->timestampformat = (char *) safemalloc(sizeof(char) * 3);
+    if (!imp_dbh->dateformat || !imp_dbh->timeformat ||
+        !imp_dbh->timestampformat)
+#else
+    if (!imp_dbh->dateformat)
+#endif
+    {
+        do_error(dbh, 2, "Not enough memory to allocate date/time formats.");
+        return FALSE;
+    }
+
+#ifndef IB_API_V6
+    strcpy(imp_dbh->dateformat,      "%c");
+#else
+    strcpy(imp_dbh->timestampformat, "%c");
+    strcpy(imp_dbh->dateformat,      "%x");
+    strcpy(imp_dbh->timeformat,      "%X");
+#endif
 
     /* linked list */
     imp_dbh->first_sth = NULL;
     imp_dbh->last_sth  = NULL;
+
+    /* save the current context for thread/multiplicy safety */
+#if defined(USE_THREADS) || defined(USE_ITHREADS) || defined(MULTIPLICITY)
+    imp_dbh->context = PERL_GET_CONTEXT;
+#endif
 
     /* Parse DSN and init values */
     sv = DBIc_IMP_DATA(imp_dbh);
@@ -374,7 +356,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     /* role, cache, charset, sqldialect */
 
     if ((svp = hv_fetch(hv, "ib_dialect", 10, FALSE)))
-        ib_dialect = SvIV(*svp);
+        ib_dialect = (unsigned short) SvIV(*svp);
     else
         ib_dialect = DEFAULT_SQL_DIALECT;
     buflen += 5;
@@ -382,7 +364,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
 
     if ((svp = hv_fetch(hv, "ib_cache", 8, FALSE)))
     {
-        ib_cache = SvIV(*svp);
+        ib_cache = (unsigned short) SvIV(*svp);
         buflen += 5;
     }
     else
@@ -396,7 +378,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     else
         ib_charset = NULL;
 
-    if ((svp = hv_fetch(hv, "ib_role", 6, FALSE)))
+    if ((svp = hv_fetch(hv, "ib_role", 7, FALSE)))
     {
         ib_role = SvPV(*svp, len);
         buflen += len + 2;
@@ -407,8 +389,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     /* add length of other parameters to needed buflen */
     buflen += 1 + 5; /* dbpversion + sqlkeyscope */
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_login6\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_login6\n"));
 
     /* Allocate DPB */
     if ((dpb_buffer = (char *) safemalloc(buflen * sizeof(char))) == NULL)
@@ -441,8 +422,10 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
         DPB_FILL_INTEGER(dpb, ib_cache);
     }
 
-    DPB_FILL_BYTE(dpb, isc_dpb_SQL_dialect);
+#ifdef IB_API_V6
+    DPB_FILL_BYTE(dpb, isc_dpb_sql_dialect);
     DPB_FILL_INTEGER(dpb, ib_dialect);
+#endif
 
     DPB_FILL_BYTE(dpb, isc_dpb_dbkey_scope);
     DPB_FILL_INTEGER(dpb, dbkey_scope);
@@ -461,9 +444,8 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
 
     dpb_length = dpb - dpb_buffer;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_db_login6: attaching to database %s..\n",
-                      database);
+    DBI_TRACE(3, (DBILOGFP, "dbd_db_login6: attaching to database %s..\n",
+                  database));
 
     isc_attach_database(status,           /* status vector */
                         0,                /* connect string is null-terminated */
@@ -479,8 +461,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     if (ib_error_check(dbh, status))
         return FALSE;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_db_login6: success attaching.\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_db_login6: success attaching.\n"));
 
     /* Tell DBI, that dbh->destroy should be called for this handle */
     DBIc_IMPSET_on(imp_dbh);
@@ -492,15 +473,21 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
 }
 
 
+int dbd_db_login(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char  *uid,
+                 char *pwd)
+{
+    return dbd_db_login6(dbh, imp_dbh, dbname, uid, pwd, Nullsv);
+}
+
+
 int dbd_db_ping(SV *dbh)
 {
-    char id;
     D_imp_dbh(dbh);
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
     char buffer[100];
 
-    if (dbis->debug >= 1) PerlIO_printf(DBILOGFP, "dbd_db_ping\n");
+    DBI_TRACE(1, (DBILOGFP, "dbd_db_ping\n"));
 
     if (isc_database_info(status, &(imp_dbh->db), 0, NULL, sizeof(buffer), buffer))
         if (ib_error_check(dbh, status))
@@ -514,8 +501,7 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
     dTHR;
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_disconnect\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_disconnect\n"));
 
     /* set the database handle to inactive */
     DBIc_ACTIVE_off(imp_dbh);
@@ -534,11 +520,12 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
         imp_dbh->tr = 0L;
     }
 
-    if (imp_dbh->tpb_buffer)
-    {
-        safefree(imp_dbh->tpb_buffer);
-        imp_dbh->tpb_buffer = NULL;
-    }
+    FREE_SETNULL(imp_dbh->tpb_buffer);
+    FREE_SETNULL(imp_dbh->dateformat);
+#ifdef IB_API_V6
+    FREE_SETNULL(imp_dbh->timeformat);
+    FREE_SETNULL(imp_dbh->timestampformat);
+#endif
 
     /* detach database */
     isc_detach_database(status, &(imp_dbh->db));
@@ -551,8 +538,7 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
 
 void dbd_db_destroy (SV *dbh, imp_dbh_t *imp_dbh)
 {
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_destroy\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_destroy\n"));
 
     if (DBIc_ACTIVE(imp_dbh))
         dbd_db_disconnect(dbh, imp_dbh);
@@ -564,10 +550,7 @@ void dbd_db_destroy (SV *dbh, imp_dbh_t *imp_dbh)
 
 int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
 {
-    ISC_STATUS status[ISC_STATUS_LENGTH];
-
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_commit\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_commit\n"));
 
     /* no commit if AutoCommit on */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit))
@@ -577,8 +560,7 @@ int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
     if (!ib_commit_transaction(dbh, imp_dbh))
         return FALSE;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_db_commit succeed.\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_db_commit succeed.\n"));
 
     return TRUE;
 }
@@ -586,11 +568,7 @@ int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
 
 int dbd_db_rollback(SV *dbh, imp_dbh_t *imp_dbh)
 {
-    dTHR;
-    ISC_STATUS status[ISC_STATUS_LENGTH];
-
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_rollback\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_rollback\n"));
 
     /* no rollback if AutoCommit = on */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit) != FALSE)
@@ -600,8 +578,7 @@ int dbd_db_rollback(SV *dbh, imp_dbh_t *imp_dbh)
     if (!ib_rollback_transaction(dbh, imp_dbh))
         return FALSE;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_db_rollback succeed.\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_db_rollback succeed.\n"));
 
     return TRUE;
 }
@@ -610,37 +587,21 @@ int dbd_db_rollback(SV *dbh, imp_dbh_t *imp_dbh)
 int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
 {
     STRLEN  kl;
-    ISC_STATUS status[ISC_STATUS_LENGTH];
     char *key   = SvPV(keysv, kl);
-    int  on     = SvTRUE(valuesv);
+    int  on     = SvTRUE(valuesv)? 1: 0;
     int  oldval;
+    int  set_frmts = 0;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_STORE - %s\n", key);
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_STORE - %s\n", key));
 
+    /**************************************************************************/
     if ((kl==10) && strEQ(key, "AutoCommit"))
     {
-        oldval = DBIc_has(imp_dbh, DBIcf_AutoCommit);
+        oldval = DBIc_has(imp_dbh, DBIcf_AutoCommit)? 1: 0;
         DBIc_set(imp_dbh, DBIcf_AutoCommit, on);
 
-        /* looks nicer in trace */
-        if (oldval) oldval = 1;
-        if (on)     on     = 1;
-
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP,
-                          "dbd_db_STORE: switch AutoCommit from %d to %d\n", oldval, on);
-
-        /* switch the soft_*commit flags according to the new AutoCommit value */
-        if (is_softcommit(imp_dbh)) {
-            if (on) {                           /* if AutoCommit on */
-                imp_dbh->soft_autocommit = 1;
-                imp_dbh->soft_commit = 0;
-            } else {                            /* if AutoCommit off */
-                imp_dbh->soft_autocommit = 0;
-                imp_dbh->soft_commit = 1;
-            }
-        }
+        DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: switch AutoCommit from %d to %d\n",
+                      oldval, on));
 
         if (oldval == FALSE && on)
         {
@@ -650,88 +611,61 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
                 if (!ib_commit_transaction(dbh, imp_dbh))
                     return FALSE;
 
-                if (dbis->debug >= 3)
-                    PerlIO_printf(DBILOGFP,
-                                  "dbd_db_STORE: commit open transaction\n");
+                    DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: commit open transaction\n"));
             }
         }
 
         return TRUE; /* handled */
     }
+    /**************************************************************************/
     else if ((kl==13) && strEQ(key, "ib_softcommit"))
     {
-        int is_autocommit = DBIc_has(imp_dbh, DBIcf_AutoCommit);
+        oldval = imp_dbh->soft_commit;
 
-        if (is_autocommit)
+        DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: switch ib_softcommit from %d to %d\n",
+                      oldval, on));
+
+        /* set new value */
+        imp_dbh->soft_commit = on;
+
+        /* switching softcommit from 1 to 0 -> make a hard commit */
+        if (!on && oldval)
         {
-            /***********************************/
-            /* soft commit for autocommit == 1 */
-
-            oldval = imp_dbh->soft_autocommit;
-
-            if (oldval) oldval = 1;
-            if (on)     on     = 1;
-
-            if (dbis->debug >= 3)
-                PerlIO_printf(DBILOGFP,
-                              "dbd_db_STORE: switch ib_softautocommit from %d to %d\n", oldval, on);
-
-            /* set new value */
-            /* these values are exclusive, they can't have the same value at the same time */
-            imp_dbh->soft_autocommit = on;
-            imp_dbh->soft_commit = 0;
-
-            /* switching softcommit from 1 to 0 -> make a hard commit */
-            if (!on && oldval)
+            if (imp_dbh->tr)
             {
-                if (imp_dbh->tr)
-                {
-                    if (!ib_commit_transaction(dbh, imp_dbh))
-                        return FALSE;
+                if (!ib_commit_transaction(dbh, imp_dbh))
+                    return FALSE;
 
-                    if (dbis->debug >= 3)
-                        PerlIO_printf(DBILOGFP,
-                                      "dbd_db_STORE: commit open transaction\n");
-                }
+                DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: commit open transaction\n"));
             }
-            return TRUE; /* handled */
         }
-        else 
-        {
-            /***********************************/
-            /* soft commit for autocommit == 0 */
-
-            oldval = imp_dbh->soft_commit;
-
-            if (oldval) oldval = 1;
-            if (on)     on     = 1;
-
-            if (dbis->debug >= 3)
-                PerlIO_printf(DBILOGFP,
-                              "dbd_db_STORE: switch ib_softcommit from %d to %d\n", oldval, on);
-
-            /* set new value */
-            /* these values are exclusive, they can't have the same value at the same time */
-            imp_dbh->soft_commit = on;
-            imp_dbh->soft_autocommit = 0;
-
-            /* switching softcommit from 1 to 0 -> make a hard commit */
-            if (!on && oldval)
-            {
-                if (imp_dbh->tr)
-                {
-                    if (!ib_commit_transaction(dbh, imp_dbh))
-                        return FALSE;
-
-                    if (dbis->debug >= 3)
-                        PerlIO_printf(DBILOGFP,
-                                      "dbd_db_STORE: commit open transaction\n");
-                }
-            }
-            return TRUE; /* handled */
-        }
+        return TRUE; /* handled */
     }
-    return FALSE; /* not handled */
+    else if ((kl==11) && strEQ(key, "ib_time_all"))
+        set_frmts = 1;
+
+    /**************************************************************************/
+    if (set_frmts || ((kl==13) && strEQ(key, "ib_dateformat")))
+    {
+        IB_SQLtimeformat(dbh, imp_dbh->dateformat, valuesv);
+        if (!set_frmts) return TRUE;
+    }
+#ifdef IB_API_V6
+    if (set_frmts || ((kl==13) && strEQ(key, "ib_timeformat")))
+    {
+        IB_SQLtimeformat(dbh, imp_dbh->timeformat, valuesv);
+        if (!set_frmts) return TRUE;
+    }
+    if (set_frmts || ((kl==18) && strEQ(key, "ib_timestampformat")))
+    {
+        IB_SQLtimeformat(dbh, imp_dbh->timestampformat, valuesv);
+        if (!set_frmts) return TRUE;
+    }
+#endif
+    /**************************************************************************/
+
+    if (set_frmts) return TRUE;
+    else return FALSE; /* not handled */
 }
 
 
@@ -741,16 +675,21 @@ SV *dbd_db_FETCH_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv)
     char *  key = SvPV(keysv, kl);
     SV *    result = NULL;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_db_FETCH - %s\n", key);
+    DBI_TRACE(2, (DBILOGFP, "dbd_db_FETCH - %s\n", key));
 
     if ((kl==10) && strEQ(key, "AutoCommit"))
-        result = boolSV(DBIc_has(imp_dbh,DBIcf_AutoCommit));
+        result = boolSV(DBIc_has(imp_dbh, DBIcf_AutoCommit));
     else if ((kl==13) && strEQ(key, "ib_softcommit"))
         result = boolSV(imp_dbh->soft_commit);
-    else if ((kl==17) && strEQ(key, "ib_softautocommit"))
-        result = boolSV(imp_dbh->soft_autocommit);
-
+    else if ((kl==13) && strEQ(key, "ib_dateformat"))
+        result = newSVpvn(imp_dbh->dateformat, strlen(imp_dbh->dateformat));
+#ifdef IB_API_V6
+    else if ((kl==13) && strEQ(key, "ib_timeformat"))
+        result = newSVpvn(imp_dbh->timeformat, strlen(imp_dbh->timeformat));
+    else if ((kl==18) && strEQ(key, "ib_timestampformat"))
+        result = newSVpvn(imp_dbh->timestampformat,
+                          strlen(imp_dbh->timestampformat));
+#endif
 
     if (result == NULL)
         return Nullsv;
@@ -768,8 +707,7 @@ void dbd_preparse(SV *sth, imp_sth_t *imp_sth, char *statement)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "Enter dbd_preparse\n");
+    DBI_TRACE(2, (DBILOGFP, "Enter dbd_preparse\n"));
 
     isc_dsql_describe_bind(status, &(imp_sth->stmt), 1, imp_sth->in_sqlda);
 
@@ -792,7 +730,7 @@ void dbd_preparse(SV *sth, imp_sth_t *imp_sth, char *statement)
         else
         {
             isc_dsql_describe_bind(status, &(imp_sth->stmt), 1, imp_sth->in_sqlda);
-            if (ib_error_check(sth, status)) 
+            if (ib_error_check(sth, status))
             {
                 ib_cleanup_st_prepare(imp_sth);
                 return;
@@ -800,12 +738,9 @@ void dbd_preparse(SV *sth, imp_sth_t *imp_sth, char *statement)
         }
     }
 
-    if (dbis->debug >= 3)
-    {
-        PerlIO_printf(DBILOGFP, "dbd_preparse: describe_bind passed.\n");
-        PerlIO_printf(DBILOGFP, "dbd_preparse: exit; in_sqlda: sqld: %d, sqln: %d.\n",
-                      imp_sth->in_sqlda->sqld, imp_sth->in_sqlda->sqln);
-    }
+    DBI_TRACE(3, (DBILOGFP, "dbd_preparse: describe_bind passed.\n"
+                  "dbd_preparse: exit; in_sqlda: sqld: %d, sqln: %d.\n",
+                      imp_sth->in_sqlda->sqld, imp_sth->in_sqlda->sqln));
 
     DBIc_NUM_PARAMS(imp_sth) = imp_sth->in_sqlda->sqld;
 }
@@ -821,8 +756,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     char        info_buffer[20], count_item;
     XSQLVAR     *var;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "Enter dbd_st_prepare\n");
+    DBI_TRACE(2, (DBILOGFP, "Enter dbd_st_prepare\n"));
 
     if (!DBIc_ACTIVE(imp_dbh))
     {
@@ -835,14 +769,15 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
 
     imp_sth->count_item  = 0;
     imp_sth->fetched     = -1;
-    imp_sth->done_desc   = 0;
     imp_sth->in_sqlda    = NULL;
     imp_sth->out_sqlda   = NULL;
     imp_sth->cursor_name = NULL;
 
-    imp_sth->ib_dateformat      = NULL;
-    imp_sth->ib_timestampformat = NULL;
-    imp_sth->ib_timeformat      = NULL;
+    imp_sth->dateformat      = NULL;
+#ifdef IB_API_V6
+    imp_sth->timestampformat = NULL;
+    imp_sth->timeformat      = NULL;
+#endif
 
     /* double linked list */
     imp_sth->prev_sth = NULL;
@@ -852,14 +787,26 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     {
         SV **svp;
 
-        if ((svp = DBD_ATTRIB_GET_SVP(attribs, "ib_dateformat", 13)) != NULL)
-            IB_SQLtimeformat(imp_sth->ib_dateformat, svp);
+        if ((svp = DBD_ATTRIB_GET_SVP(attribs, "ib_time_all", 11)) != NULL)
+        {
+            IB_SQLtimeformat(sth, imp_sth->dateformat, *svp);
+#ifdef IB_API_V6
+            IB_SQLtimeformat(sth, imp_sth->timestampformat, *svp);
+            IB_SQLtimeformat(sth, imp_sth->timeformat, *svp);
+#endif
+        }
 
+
+        if ((svp = DBD_ATTRIB_GET_SVP(attribs, "ib_dateformat", 13)) != NULL)
+            IB_SQLtimeformat(sth, imp_sth->dateformat, *svp);
+
+#ifdef IB_API_V6
         if ((svp = DBD_ATTRIB_GET_SVP(attribs, "ib_timestampformat", 18)) != NULL)
-            IB_SQLtimeformat(imp_sth->ib_timestampformat, svp);
+            IB_SQLtimeformat(sth, imp_sth->timestampformat, *svp);
 
         if ((svp = DBD_ATTRIB_GET_SVP(attribs, "ib_timeformat", 13)) != NULL)
-            IB_SQLtimeformat(imp_sth->ib_timeformat, svp);
+            IB_SQLtimeformat(sth, imp_sth->timeformat, *svp);
+#endif
     }
 
 
@@ -888,9 +835,8 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         return FALSE;
     }
 
-    if (dbis->debug >= 3)
-       PerlIO_printf(DBILOGFP, "dbd_st_prepare: sqldialect: %d.\n",
-                     imp_dbh->sqldialect);
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: sqldialect: %d.\n",
+                  imp_dbh->sqldialect));
 
     if (!imp_dbh->tr)
     {
@@ -902,8 +848,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         }
     }
 
-    if (dbis->debug >= 3)
-       PerlIO_printf(DBILOGFP, "dbd_st_prepare: statement: %s.\n", statement);
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: statement: %s.\n", statement));
 
     isc_dsql_prepare(status, &(imp_dbh->tr), &(imp_sth->stmt), 0, statement,
                      imp_dbh->sqldialect, imp_sth->out_sqlda);
@@ -914,8 +859,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         return FALSE;
     }
 
-    if (dbis->debug >= 3)
-       PerlIO_printf(DBILOGFP, "dbd_st_prepare: isc_dsql_prepare succeed..\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: isc_dsql_prepare succeed..\n"));
 
     stmt_info[0] = isc_info_sql_stmt_type;
     isc_dsql_sql_info(status, &(imp_sth->stmt), sizeof (stmt_info), stmt_info,
@@ -933,16 +877,14 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     }
 
     /* sanity check of statement type */
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_st_prepare: statement type: %ld.\n",
-                      imp_sth->type);
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: statement type: %ld.\n",
+                  imp_sth->type));
 
     switch (imp_sth->type)
     {
         /* Implemented statement types. */
         case isc_info_sql_stmt_select:
         case isc_info_sql_stmt_select_for_upd:
-#if 1
             /*
              * Unfortunately, select count item doesn't work
              * in current versions of InterBase.
@@ -953,7 +895,6 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
              * fetches them all.
              */
              count_item = isc_info_req_select_count;
-#endif
              break;
 
         case isc_info_sql_stmt_insert:
@@ -993,26 +934,14 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     /* realloc in_sqlda where needed */
     dbd_preparse(sth, imp_sth, statement);
 
-    /* Now fill out_sqlda with select-list items */
-    if (!dbd_describe(sth, imp_sth))
-    {
-        ib_cleanup_st_prepare(imp_sth);
-        return FALSE;
-    }
-
-    if (dbis->debug >= 3)
-    {
-        PerlIO_printf(DBILOGFP, "dbd_st_prepare: dbd_describe passed.\n");
-        PerlIO_printf(DBILOGFP, "out_sqlda: sqld: %d, sqln: %d. ",
-                      imp_sth->out_sqlda->sqld, imp_sth->out_sqlda->sqln);
-        PerlIO_printf(DBILOGFP, "done_desc: %d.\n", imp_sth->done_desc);
-    }
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: dbd_describe passed.\n"
+                            "out_sqlda: sqld: %d, sqln: %d.\n",
+                            imp_sth->out_sqlda->sqld, imp_sth->out_sqlda->sqln));
 
     /* enough output parameter block ? */
     if (imp_sth->out_sqlda->sqld > imp_sth->out_sqlda->sqln)
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_prepare: realloc out_sqlda..\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: realloc out_sqlda..\n"));
 
         IB_alloc_sqlda(imp_sth->out_sqlda, imp_sth->out_sqlda->sqld);
 
@@ -1024,8 +953,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         }
         else
         {
-            if (dbis->debug >= 3)
-                PerlIO_printf(DBILOGFP, "dbd_st_prepare: calling isc_dsql_describe again..\n");
+            DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: calling isc_dsql_describe again..\n"));
 
             isc_dsql_describe(status, &(imp_sth->stmt), 1, imp_sth->out_sqlda);
             if (ib_error_check(sth, status))
@@ -1033,8 +961,8 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
                 ib_cleanup_st_prepare(imp_sth);
                 return FALSE;
             }
-            if (dbis->debug >= 3)
-                PerlIO_printf(DBILOGFP, "dbd_st_prepare: success calling isc_dsql_describe.\n");
+
+            DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: success calling isc_dsql_describe.\n"));
         }
     }
     else if (imp_sth->out_sqlda->sqld == 0) /* not a select statement */
@@ -1052,60 +980,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
             dtype = (var->sqltype & ~1);
             var->sqlind = NULL;
 
-            if (dbis->debug >= 3)
-                PerlIO_printf(DBILOGFP, "dbd_st_prepare: field type: %d.\n", dtype);
-
-            /* specify time format, if needed */
-            switch (dtype)
-            {
-                case SQL_TYPE_DATE:
-                    if (imp_sth->ib_dateformat == NULL)
-                    {
-                        if ((imp_sth->ib_dateformat =
-                            (char *)safemalloc(sizeof(char) * 3)) == NULL)
-                        {
-                            do_error(sth, 2, "Can't alloc ib_dateformat.\n");
-                            return FALSE;
-                        }
-
-                        strcpy(imp_sth->ib_dateformat, "%x");
-
-                        if (dbis->debug >= 3)
-                        {
-                            PerlIO_printf(DBILOGFP, "ib_dateformat: %s.\n",
-                                          imp_sth->ib_dateformat);
-                            PerlIO_printf(DBILOGFP, "Len: %d.\n",
-                                          strlen(imp_sth->ib_dateformat));
-                         }
-                    }
-                    break;
-
-                case SQL_TIMESTAMP:
-                    if (imp_sth->ib_timestampformat == NULL)
-                    {
-                        if ((imp_sth->ib_timestampformat =
-                            (char *)safemalloc(sizeof(char) * 3)) == NULL)
-                        {
-                            do_error(sth, 2, "Can't alloc ib_timestampformat.\n");
-                            return FALSE;
-                        }
-                        strcpy(imp_sth->ib_timestampformat, "%c");
-                    }
-                    break;
-
-                case SQL_TYPE_TIME:
-                    if (imp_sth->ib_timeformat == NULL)
-                    {
-                        if ((imp_sth->ib_timeformat =
-                            (char *)safemalloc(sizeof(char) * 3)) == NULL)
-                        {
-                            do_error(sth, 2, "Can't alloc ib_timeformat.\n");
-                            return FALSE;
-                        }
-                        strcpy(imp_sth->ib_timeformat, "%X");
-                    }
-                    break;
-            } /* end switch */
+            DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: field type: %d.\n", dtype));
 
             /* Alloc space for sqldata */
             var->sqldata = (char *) safemalloc(var->sqllen +
@@ -1137,8 +1012,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
 
     imp_dbh->first_sth = imp_sth;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_st_prepare: sth inserted into linked list.\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: sth inserted into linked list.\n"));
 
     /* tell DBI that we have a real statement handle now */
     DBIc_IMPSET_on(imp_sth);
@@ -1149,25 +1023,22 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
 int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
 {
     D_imp_dbh_from_sth;
-    ISC_STATUS status[20], fetch;
+    ISC_STATUS status[ISC_STATUS_LENGTH];
     char       stmt_info[1];
     char       info_buffer[20];
     int        result = -2;
-    int        row_count;
+    int        row_count = 0;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_st_execute\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_st_execute\n"));
 
     /* if not already done: start new transaction */
     if (!imp_dbh->tr)
         if (!ib_start_transaction(sth, imp_dbh))
             return result;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_st_execute: statement type: %ld.\n",
-                      imp_sth->type);
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: statement type: %ld.\n",
+                  imp_sth->type));
 
-    
     /* we count DDL statments */
     if (imp_sth->type == isc_info_sql_stmt_ddl)
         imp_dbh->sth_ddl++;
@@ -1176,25 +1047,28 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
     /* exec procedure statement */
     if (imp_sth->type == isc_info_sql_stmt_exec_procedure)
     {
-        /* check for valid {in|out}_sqlda */
-        if (!imp_sth->in_sqlda || !imp_sth->out_sqlda)
-            return FALSE;
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: calling isc_dsql_execute2 (exec procedure)..\n"));
 
         isc_dsql_execute2(status, &(imp_dbh->tr), &(imp_sth->stmt),
                           imp_dbh->sqldialect,
-                          imp_sth->in_sqlda->sqld > 0? imp_sth->in_sqlda: NULL,
-                          imp_sth->out_sqlda->sqld > 0? imp_sth->out_sqlda: NULL);
+                          (imp_sth->in_sqlda && (imp_sth->in_sqlda->sqld > 0))?
+                           imp_sth->in_sqlda: NULL,
+                          (imp_sth->out_sqlda && (imp_sth->out_sqlda->sqld > 0))?
+                           imp_sth->out_sqlda: NULL);
 
         if (ib_error_check(sth, status))
         {
             ib_cleanup_st_execute(imp_sth);
             return result;
         }
+
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: isc_dsql_execute2 succeed.\n"));
+
+        imp_sth->fetched = 0;
     }
     else /* all other types of SQL statements */
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_execute: calling isc_dsql_execute..\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: calling isc_dsql_execute..\n"));
 
         /* check for valid in_sqlda */
         if (!imp_sth->in_sqlda)
@@ -1215,8 +1089,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
             return result;
         }
 
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_execute: isc_dsql_execute succeed.\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: isc_dsql_execute succeed.\n"));
     }
 
     /* Jika AutoCommit On, commit_transaction() (bukan retaining),
@@ -1226,10 +1099,10 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
      */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit)
         && imp_sth->type != isc_info_sql_stmt_select
-        && imp_sth->type != isc_info_sql_stmt_select_for_upd)
+        && imp_sth->type != isc_info_sql_stmt_select_for_upd
+        && imp_sth->type != isc_info_sql_stmt_exec_procedure)
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_execute: calling ib_commit_transaction..\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: calling ib_commit_transaction..\n"));
 
         if (!ib_commit_transaction(sth, imp_dbh))
         {
@@ -1237,8 +1110,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
             return result;
         }
 
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_execute: ib_commit_transaction succeed.\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: ib_commit_transaction succeed.\n"));
     }
 
     /* Declare a unique cursor for this query */
@@ -1258,7 +1130,8 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
         case isc_info_sql_stmt_select:
         case isc_info_sql_stmt_select_for_upd:
         case isc_info_sql_stmt_exec_procedure:
-            DBIc_NUM_FIELDS(imp_sth) = imp_sth->out_sqlda->sqld;
+            DBIc_NUM_FIELDS(imp_sth) = (imp_sth->out_sqlda)?
+                                        imp_sth->out_sqlda->sqld: 0;
             DBIc_ACTIVE_on(imp_sth);
             break;
     }
@@ -1285,12 +1158,9 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
 
     result = -1;
     /* XXX attempt to return number of affected rows still doesn't work */
-    if (dbis->debug >= 3)
-    {
-        PerlIO_printf(DBILOGFP, "dbd_st_execute: row count: %d.\n", row_count);
-        PerlIO_printf(DBILOGFP, "dbd_st_execute: count_item: %c.\n",
-                      imp_sth->count_item);
-    }
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: row count: %d.\n"
+                            "dbd_st_execute: count_item: %c.\n",
+                            row_count, imp_sth->count_item));
 
     return result;
 }
@@ -1301,17 +1171,15 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
 {
     D_imp_dbh_from_sth;     /* declare imp_dbh from sth */
     ISC_STATUS  fetch = 0;
-    ISC_STATUS  status[20]; /* isc api status vector    */
+    ISC_STATUS  status[ISC_STATUS_LENGTH];
     int         chopBlanks; /* chopBlanks ?             */
     AV          *av;        /* array buffer             */
+    SV          *sv, **svp; /* buffers */
     XSQLVAR     *var;       /* working pointer XSQLVAR  */
     int         i;          /* loop */
-    int         val_length;
     short       dtype;
-    SV          *val;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_st_fetch\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_st_fetch\n"));
 
     if (!DBIc_ACTIVE(imp_sth))
     {
@@ -1322,72 +1190,71 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
     chopBlanks = DBIc_is(imp_sth, DBIcf_ChopBlanks);
 
     av = DBIS->get_fbav(imp_sth);
+    svp = AvARRAY(av);
 
     /*
      * if it's an execute procedure, we've already got the
-     * output from the isc_dsql_execute2() call in IB_execute().
+     * output from the isc_dsql_execute2() call in dbd_st_execute().
      */
-/*
-    if (!imp_sth->type == isc_info_sql_stmt_select ||
-        !imp_sth->type == isc_info_sql_stmt_select_for_upd)
+    if (imp_sth->type != isc_info_sql_stmt_exec_procedure)
     {
-        return Nullav;
-    }
-*/
-    /* else .. fetch */
-    fetch = isc_dsql_fetch(status, &(imp_sth->stmt), imp_dbh->sqldialect,
-                           imp_sth->out_sqlda);
-
-    if (ib_error_check(sth, status))
-        return Nullav;
-
-    /*
-     * Code 100 means we've reached the end of the set
-     * of rows that the SELECT will return.
-     */
-
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_st_fetch: fetch result: %d\n", fetch);
-
-    if (imp_sth->fetched < 0)
-        imp_sth->fetched = 0;
-
-    if (fetch == 100)
-    {
-        /* close the cursor */
-        isc_dsql_free_statement(status, &(imp_sth->stmt), DSQL_close);
+        fetch = isc_dsql_fetch(status, &(imp_sth->stmt), imp_dbh->sqldialect,
+                               imp_sth->out_sqlda);
 
         if (ib_error_check(sth, status))
             return Nullav;
 
-        if (dbis->debug >= 3)
-           PerlIO_printf(DBILOGFP, "isc_dsql_free_statement succeed.\n");
+        /*
+         * Code 100 means we've reached the end of the set
+         * of rows that the SELECT will return.
+         */
 
-        DBIc_ACTIVE_off(imp_sth); /* dbd_st_finish is no longer needed */
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_fetch: fetch result: %d\n", fetch));
 
-        /* if AutoCommit on XXX. what to return if fails? */
-        if (DBIc_has(imp_dbh, DBIcf_AutoCommit))
+        if (imp_sth->fetched < 0)
+            imp_sth->fetched = 0;
+
+        if (fetch == 100)
         {
-            if (!ib_commit_transaction(sth, imp_dbh))
+            /* close the cursor */
+            isc_dsql_free_statement(status, &(imp_sth->stmt), DSQL_close);
+
+            if (ib_error_check(sth, status))
                 return Nullav;
 
-            if (dbis->debug >= 3)
-               PerlIO_printf(DBILOGFP, "fetch ends: ib_commit_transaction succeed.\n");
-        }
+            DBI_TRACE(3, (DBILOGFP, "isc_dsql_free_statement succeed.\n"));
 
-        return Nullav;
-    }
-    else if (fetch != 0) /* something bad */
-    {   do_error(sth, 0, "Fetch error");
-        DBIc_ACTIVE_off(imp_sth);
-        return Nullav;
+            DBIc_ACTIVE_off(imp_sth); /* dbd_st_finish is no longer needed */
+
+            /* if AutoCommit on XXX. what to return if fails? */
+            if (DBIc_has(imp_dbh, DBIcf_AutoCommit))
+            {
+                if (!ib_commit_transaction(sth, imp_dbh))
+                    return Nullav;
+
+                DBI_TRACE(3, (DBILOGFP, "fetch ends: ib_commit_transaction succeed.\n"));
+            }
+
+            return Nullav;
+        }
+        else if (fetch != 0) /* something bad */
+        {   do_error(sth, 0, "Fetch error");
+            DBIc_ACTIVE_off(imp_sth);
+            return Nullav;
+        }
+    } /* !exec_procedure */
+    else
+    {
+        /* we only fetch one row for exec procedure */
+        if (imp_sth->fetched)
+            return Nullav;
     }
 
     var = imp_sth->out_sqlda->sqlvar;
     for (i = 0; i < imp_sth->out_sqlda->sqld; i++, var++)
     {
-        SV *sv = AvARRAY(av)[i];
-        dtype  = var->sqltype & ~1;
+        sv = svp[i];
+        dtype = var->sqltype & ~1;
 
         if ((var->sqltype & 1) && (*(var->sqlind) == -1))
         /* if nullable field */
@@ -1410,11 +1277,9 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
 
                         numeric = ((double) (*(short *) var->sqldata)) /
                                    pow(10.0, (double) -var->sqlscale);
-                        /* val = newSVnv(numeric); */
                         sv_setnv(sv, numeric);
                     }
                     else
-                        /* val = newSViv(*(short *) (var->sqldata)); */
                         sv_setiv(sv, *(short *) (var->sqldata));
                     break;
 
@@ -1425,11 +1290,9 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
 
                         numeric = ((double) (*(long *) var->sqldata)) /
                                    pow(10.0, (double) -var->sqlscale);
-                        /* val = newSVnv(numeric); */
                         sv_setnv(sv, numeric);
                     }
                     else
-                        /* val = newSViv(*(long *) (var->sqldata)); */
                         sv_setiv(sv, *(long *) (var->sqldata));
                     break;
 #ifdef SQL_INT64
@@ -1443,17 +1306,10 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                  * nobody has a problem with it.
                  */
                 {
-                    ISC_INT64 q;
+                    ISC_INT64 q, r;
                     char buf[25], prec_buf[25];
                     long double prec;
                     q = *((ISC_INT64 *) (var->sqldata));
-                    /*
-                     * %Ld is a GNUism and is not portable.
-                     * One alternative would be %qd, but this
-                     * is BSD 4.4 syntax and is also not
-                     * portable.  The printf(3) man page is
-                     * not clear on which is the best method.
-                     */
 
                     /*
                      * I deliberately use two integers instead
@@ -1462,27 +1318,32 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                      * to IEEE float, which is the whole reason
                      * for InterBase support of INT64.
                      */
-/* 
- * Define INT64 printf formats for various platforms 
+/*
+ * Define INT64 printf formats for various platforms
  * using #defines eases the adding of a new platform (compiler/library)
  */
 
-#ifdef _MSC_VER   /* Microsoft C compiler/library */
+#if defined(_MSC_VER)        /* Microsoft C compiler/library */
 #  define P_INT64_RPEC "%.*I64f"
-#  define P_INT64_FULL "%I64d%s"
-#else             /* Others (GNU, Borland, ?) */
+#  define P_INT64_FULL "%s%I64d%s"
+#elif defined(__BORLANDC__)  /* Borland compiler/library */
 #  define P_INT64_RPEC "%.*Lf"
-#  define P_INT64_FULL "%Ld%s"
+#  define P_INT64_FULL "%s%Ld%s"
+#else                        /* others: linux, xBSD, solaris, hp-ux, ... */
+#  define P_INT64_RPEC "%.*Lf"
+#  define P_INT64_FULL "%s%lld%s"
 #endif
 
-                    prec = abs((q % (int) 
-                    pow(10.0, (double) -var->sqlscale))) / 
-                    (long double) pow(10.0, (double) -var->sqlscale);
+                    prec = abs((int) (q % (int)
+                      pow(10.0, (double) -var->sqlscale))) /
+                      (long double) pow(10.0, (double) -var->sqlscale);
 
                     sprintf(prec_buf, P_INT64_RPEC, (int) -var->sqlscale, prec);
-                    sprintf(buf, P_INT64_FULL, (ISC_INT64) (q / (int)
-                             pow(10.0, (double) -var->sqlscale)),
+
+                    r = (ISC_INT64) (q / (int) pow(10.0, (double) -var->sqlscale));
+                    sprintf(buf, P_INT64_FULL, ((q < 0) && !(r < 0))? "-": "", r,
                             prec ? prec_buf + 1 : "");
+
                     sv_setpvn(sv, buf, strlen(buf));
                 }
                 break;
@@ -1516,10 +1377,8 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                  * overrun if I do!
                  */
 
-                    if (dbis->debug >= 3)
-                        PerlIO_printf(DBILOGFP,
-                                      "Fill in TEXT type..\nLength: %d\n",
-                                      var->sqllen);
+                    DBI_TRACE(3, (DBILOGFP, "Fill in TEXT type..\nLength: %d\n",
+                                  var->sqllen));
 
                     if (chopBlanks && (var->sqllen > 0))
                     {
@@ -1529,20 +1388,13 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                         sv_setpvn(sv, p, len);
                     }
                     else
-                        /* XXX problem with fixed width CHAR */
                         sv_setpvn(sv, var->sqldata, var->sqllen);
-                        /* sv_setpv(sv, var->sqldata); */
                     break;
 
                 case SQL_VARYING:
                 {
                     VARY *vary = (VARY *) var->sqldata;
-                    char *string;
-                    short len;
-
-                    len    = vary->vary_length;
-                    string = vary->vary_string;
-                    sv_setpvn(sv, string, len);
+                    sv_setpvn(sv, vary->vary_string, vary->vary_length);
                     /* Note that sqllen for VARCHARs is the max length */
                     break;
                 }
@@ -1557,7 +1409,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                  * is %c, defined in /usr/lib/locale/<locale>/LC_TIME/time,
                  * where <locale> is the host's chosen locale.
                  */
-#ifndef SQL_TIMESTAMP
+#ifndef IB_API_V6
                 case SQL_DATE:
 #else
                 case SQL_TIMESTAMP:
@@ -1565,119 +1417,129 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                 case SQL_TYPE_TIME:
 #endif
                 {
-                    char         *format, format_buf[20];
-                    unsigned int len;
-                    struct tm    times;
-#ifndef SQL_TIMESTAMP
+                    char     *format, buf[100];
+                    struct tm times;
+                    int       fpsec;
+
+#ifndef IB_API_V6
                     isc_decode_date((ISC_QUAD *) var->sqldata, &times);
+                    format = imp_sth->dateformat;
 #else
                     switch (dtype)
                     {
                         case SQL_TIMESTAMP:
                             isc_decode_timestamp((ISC_TIMESTAMP *) var->sqldata, &times);
+                            format = imp_sth->timestampformat ?
+                                imp_sth->timestampformat :
+                                imp_dbh->timestampformat;
+                            fpsec = TIMESTAMP_FPSECS(var->sqldata);
                             break;
 
                         case SQL_TYPE_DATE:
                             isc_decode_sql_date((ISC_DATE *) var->sqldata, &times);
+                            format = imp_sth->dateformat ?
+                                imp_sth->dateformat :
+                                imp_dbh->dateformat;
+                            fpsec = 0;
                             break;
 
                         case SQL_TYPE_TIME:
                             isc_decode_sql_time((ISC_TIME *) var->sqldata, &times);
+                            format = imp_sth->timeformat ?
+                                imp_sth->timeformat :
+                                imp_dbh->timeformat;
+                            fpsec = TIME_FPSECS(var->sqldata);
                             break;
                     }
-                    if (dbis->debug >= 3)
-                        PerlIO_printf(DBILOGFP, "Decode passed.\n");
-#endif
-#ifdef __FreeBSD__
-                    /*
-                     * FreeBSD has a bug with European time zones
-                     * This is how they corrected it in POSIX.xs,
-                     * so I'll do the same here.
-                     * Thanks to German Myzovsky <lawyer@alpha.tario.ru>
-                     * for bringing this to my attention.
-                     */
-                    times.tm_gmtoff = 0;
-                    times.tm_zone = "???";
-#else /* __FreeBSD__ */
-                    /* normalize */
-                    (void) mktime(&times);
-#endif /* __FreeBSD__ */
 
-                    /* I'm assumming these ib_*formats are null terminated */
-#ifndef SQL_TIMESTAMP
+                    DBI_TRACE(3, (DBILOGFP, "Decode passed.\n"));
 
-                    if (strlen(imp_sth->ib_dateformat) + 1 > 20)
+
+                    /* hardcoded output format.... */
+                    if (!strcmp(format, "iso") || !strcmp(format, "ISO"))
                     {
-                        do_error(sth, 1, "Buffer overflow.");
-                        return FALSE;
-                    }
-                    else
-                        strcpy(format_buf, imp_sth->ib_dateformat);
-#else
-                    switch (dtype)
-                    {
-                        case SQL_TIMESTAMP:
-                            if (strlen(imp_sth->ib_timestampformat) + 1 > 20)
-                            {
-                                do_error(sth, 1, "Buffer overflow.");
-                                return FALSE;
-                            }
-                            else
-                                strcpy(format_buf, imp_sth->ib_timestampformat);
-                            break;
-
-                        case SQL_TYPE_DATE:
-                            if (strlen(imp_sth->ib_dateformat) + 1 > 20)
-                            {
-                                do_error(sth, 1, "Buffer overflow.");
-                                return FALSE;
-                            }
-                            else
-                                strcpy(format_buf, imp_sth->ib_dateformat);
-                            break;
-
-                        case SQL_TYPE_TIME:
-                            if (strlen(imp_sth->ib_timeformat) + 1 > 20)
-                            {
-                                do_error(sth, 1, "Buffer overflow.");
-                                return FALSE;
-                            }
-                            else
-                                strcpy(format_buf, imp_sth->ib_timeformat);
-                            break;
-                    }
-#endif
-                    if (!strlen(format_buf))
-                    {
-                    /*
-                     * Assign defaults in the absence of a
-                     * value for the statement property.
-                     */
-#ifndef SQL_TIMESTAMP
-                        strcpy(format_buf, "%c");
-#else
                         switch (dtype)
                         {
+#ifndef IB_API_V6
+                            case SQL_DATE:
+#else
                             case SQL_TIMESTAMP:
-                                strcpy(format_buf, "%c");
+#endif
+                                sprintf(buf, "%04d-%02d-%02d %02d:%02d:%02d.%04d",
+                                        times.tm_year + 1900,
+                                        times.tm_mon  + 1,
+                                        times.tm_mday,
+                                        times.tm_hour,
+                                        times.tm_min,
+                                        times.tm_sec,
+                                        TIMESTAMP_FPSECS(var->sqldata));
                                 break;
-
+#ifdef IB_API_V6
                             case SQL_TYPE_DATE:
-                                strcpy(format_buf, "%x");
+                                sprintf(buf, "%04d-%02d-%02d",
+                                        times.tm_year + 1900,
+                                        times.tm_mon  + 1,
+                                        times.tm_mday);
                                 break;
 
                             case SQL_TYPE_TIME:
-                                strcpy(format_buf, "%X");
+                                sprintf(buf, "%02d:%02d:%02d.%04d",
+                                        times.tm_hour,
+                                        times.tm_min,
+                                        times.tm_sec,
+                                        TIME_FPSECS(var->sqldata));
                                 break;
                         }
 #endif
-                    }
-                    format = format_buf;
-                    {
-                        char buf[100];
-                        strftime(buf, sizeof(buf), format, &times);
+
                         sv_setpvn(sv, buf, strlen(buf));
+                        break;
                     }
+
+
+#endif
+                    /* output as array like perl's localtime? */
+                    if (!strcmp(format, "tm") || !strcmp(format, "TM"))
+                    {
+                        AV *list = newAV();
+
+                        av_push(list, newSViv(times.tm_sec));
+                        av_push(list, newSViv(times.tm_min));
+                        av_push(list, newSViv(times.tm_hour));
+                        av_push(list, newSViv(times.tm_mday));
+                        av_push(list, newSViv(times.tm_mon));
+                        av_push(list, newSViv(times.tm_year));
+                        av_push(list, newSViv(times.tm_wday));
+                        av_push(list, newSViv(times.tm_yday));
+                        av_push(list, newSViv(times.tm_isdst));
+
+                        /* value returned is a reference to the array */
+                        sv_setsv(sv, newRV_noinc((SV *) list));
+                        break;
+                    }
+
+#ifndef WIN32
+                    /*
+                     * may be we must here copy additional fields needed on
+                     * some platforms for some strftime formats. copy from a
+                     * dummy struct passed to mktime(). calling mktime()
+                     * directly with &times is wrong.
+                     */
+
+                    /* struct tm has 9 fields plus may be some more */
+                    if (sizeof(struct tm) > (9*sizeof(int)))
+                    {
+                        struct tm dummy;
+                        memset(&dummy, 0, sizeof(struct tm));
+                        mktime(&dummy);
+                        memcpy(((char *)&times) + 9*sizeof(int),
+                               ((char *)&dummy) + 9*sizeof(int),
+                               sizeof(struct tm) - (9*sizeof(int)));
+                    }
+#endif
+
+                    strftime(buf, sizeof(buf), format, &times);
+                    sv_setpvn(sv, buf, strlen(buf));
                     break;
                 }
 
@@ -1695,11 +1557,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     long max_segment = -1L, total_length = -1L, t;
                     unsigned short seg_length;
 
-                    /*
-                     * Open the Blob according to the Blob id.
-                     * Here's where my internal st, tr, and db
-                     * data structures are really starting to pay off.
-                     */
+                    /* Open the Blob according to the Blob id. */
                     isc_open_blob2(status, &(imp_dbh->db), &(imp_dbh->tr),
                                    &blob_handle, (ISC_QUAD *) var->sqldata,
                                    (short) 0,       /* no Blob filter */
@@ -1708,11 +1566,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     if (ib_error_check(sth, status))
                         return FALSE;
 
-                    /*
-                     * To find out the segment size in the proper way,
-                     * I must query the blob information.
-                     */
-
+                    /* query blob information to find out the segment size */
                     isc_blob_info(status, &blob_handle, sizeof(blob_info_items),
                                   blob_info_items, sizeof(blob_info_buffer),
                                   blob_info_buffer);
@@ -1740,10 +1594,9 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                         p += length;
                     }
 
-                    if (dbis->debug >= 3)
-                        PerlIO_printf(DBILOGFP,
-                                      "dbd_st_fetch: BLOB info - max_segment: %ld, total_length: %ld\n",
-                                      max_segment, total_length);
+                    DBI_TRACE(3, (DBILOGFP,
+                                  "dbd_st_fetch: BLOB info - max_segment: %ld, total_length: %ld\n",
+                                  max_segment, total_length));
 
                     if (max_segment == -1L || total_length == -1L)
                     {
@@ -1763,7 +1616,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                         break;
                     }
 
-                    if ((DBIc_LongReadLen(imp_sth) < total_length) &&
+                    if ((DBIc_LongReadLen(imp_sth) < (unsigned long) total_length) &&
                         (! DBIc_is(imp_dbh, DBIcf_LongTruncOk)))
                     {
                         isc_cancel_blob(status, &blob_handle);
@@ -1877,38 +1730,35 @@ int dbd_st_finish(SV *sth, imp_sth_t *imp_sth)
     D_imp_dbh_from_sth;
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_st_finish\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_st_finish\n"));
 
     if (!DBIc_ACTIVE(imp_sth)) /* already finished */
         return TRUE;
 
     /* Close the cursor, not drop the statement! */
-    isc_dsql_free_statement(status, (isc_stmt_handle *)&(imp_sth->stmt), DSQL_close);
+    if (imp_sth->type != isc_info_sql_stmt_exec_procedure)
+        isc_dsql_free_statement(status, (isc_stmt_handle *)&(imp_sth->stmt), DSQL_close);
 
     if (ib_error_check(sth, status))
         return FALSE;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_st_finish: isc_dsql_free_statement passed.\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_finish: isc_dsql_free_statement passed.\n"));
 
-    /* set statement to inactive - must be before ib_commit_transaction 'cos 
+    /* set statement to inactive - must be before ib_commit_transaction 'cos
        commit can call dbd_st_finish function again */
     DBIc_ACTIVE_off(imp_sth);
 
     /* if AutoCommit on */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit))
     {
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "dbd_st_finish: Trying to call ib_commit_transaction.\n");
+        DBI_TRACE(4, (DBILOGFP, "dbd_st_finish: Trying to call ib_commit_transaction.\n"));
+
         if (!ib_commit_transaction(sth, imp_dbh))
         {
-            if (dbis->debug >= 4)
-                PerlIO_printf(DBILOGFP, "dbd_st_finish: Call ib_commit_transaction finished returned FALSE.\n");
+            DBI_TRACE(4, (DBILOGFP, "dbd_st_finish: Call ib_commit_transaction finished returned FALSE.\n"));
             return FALSE;
         }
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "dbd_st_finish: Call ib_commit_transaction succeded.\n");
+        DBI_TRACE(4, (DBILOGFP, "dbd_st_finish: Call ib_commit_transaction succeded.\n"));
     }
 
     return TRUE;
@@ -1920,8 +1770,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
     D_imp_dbh_from_sth;
     ISC_STATUS  status[ISC_STATUS_LENGTH];
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_st_destroy\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_st_destroy\n"));
 
     /* freeing cursor name */
     if (imp_sth->cursor_name != NULL)
@@ -1936,27 +1785,15 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
         int i;
         XSQLVAR *var = imp_sth->in_sqlda->sqlvar;
 
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_destroy: found in_sqlda..\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: found in_sqlda..\n"));
 
         for (i = 0; i < imp_sth->in_sqlda->sqld; i++, var++)
         {
-            if (var->sqldata)
-            {
-                safefree(var->sqldata);
-                var->sqldata = NULL;
-            }
-
-            if (var->sqlind)
-            {
-                safefree(var->sqlind);
-                var->sqlind = NULL;
-            }
-
+            FREE_SETNULL(var->sqldata);
+            FREE_SETNULL(var->sqlind);
         }
 
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_destroy: freeing in_sqlda..\n");
+        DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: freeing in_sqlda..\n"));
 
         safefree(imp_sth->in_sqlda);
         imp_sth->in_sqlda = NULL;
@@ -1969,41 +1806,19 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
         XSQLVAR *var = imp_sth->out_sqlda->sqlvar;
         for (i = 0; i < imp_sth->out_sqlda->sqld; i++, var++)
         {
-            if (var->sqldata)
-            {
-                safefree(var->sqldata);
-                var->sqldata = NULL;
-            }
-
-            if (var->sqlind)
-            {
-                safefree(var->sqlind);
-                var->sqlind = NULL;
-            }
-
+            FREE_SETNULL(var->sqldata);
+            FREE_SETNULL(var->sqlind);
         }
         safefree(imp_sth->out_sqlda);
         imp_sth->out_sqlda = NULL;
     }
 
     /* free all other resources */
-    if (imp_sth->ib_dateformat)
-    {
-        safefree(imp_sth->ib_dateformat);
-        imp_sth->ib_dateformat = NULL;
-    }
-
-    if (imp_sth->ib_timeformat)
-    {
-        safefree(imp_sth->ib_timeformat);
-        imp_sth->ib_timeformat = NULL;
-    }
-
-    if (imp_sth->ib_timestampformat)
-    {
-        safefree(imp_sth->ib_timestampformat);
-        imp_sth->ib_timestampformat = NULL;
-    }
+    FREE_SETNULL(imp_sth->dateformat);
+#ifdef IB_API_V6
+    FREE_SETNULL(imp_sth->timeformat);
+    FREE_SETNULL(imp_sth->timestampformat);
+#endif
 
     /* Drop the statement */
     if (imp_sth->stmt)
@@ -2011,11 +1826,10 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
         isc_dsql_free_statement(status, &(imp_sth->stmt), DSQL_drop);
         if (ib_error_check(sth, status))
         {
-            if (dbis->debug >= 3)
-                PerlIO_printf(DBILOGFP, "dbd_st_destroy: isc_dsql_free_statement failed.\n");
+            DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: isc_dsql_free_statement failed.\n"));
         }
-        else if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "dbd_st_destroy: isc_dsql_free_statement succeeded.\n");
+        else
+            DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: isc_dsql_free_statement succeeded.\n"));
 
         imp_sth->stmt = 0L;
     }
@@ -2027,7 +1841,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
         imp_dbh->first_sth = imp_sth->next_sth;
     else
         imp_sth->prev_sth->next_sth = imp_sth->next_sth;
-        
+
     /* handle next element*/
     if (imp_sth->next_sth == NULL)
         imp_dbh->last_sth = imp_sth->prev_sth;
@@ -2037,8 +1851,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
     /* set next/prev to NULL */
     imp_sth->prev_sth = imp_sth->next_sth = NULL;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "dbd_st_destroy: sth removed from linked list.\n");
+    DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: sth removed from linked list.\n"));
 
 
     /* let DBI know we've done it */
@@ -2055,26 +1868,14 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
     /* Default to caching results for DBI dispatch quick_FETCH  */
     int cacheit = TRUE;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_st_FETCH - %s\n", key);
+    DBI_TRACE(2, (DBILOGFP, "dbd_st_FETCH - %s\n", key));
 
     if (kl==13 && strEQ(key, "NUM_OF_PARAMS"))  /* handled by DBI */
         return Nullsv;
 
-    if (!imp_sth->done_desc && !dbd_describe(sth, imp_sth))
-    {
-        STRLEN lna;
-
-        /* we can't return Nullsv here because the xs code will */
-        /* then just pass the attribute name to DBI for FETCH.  */
-
-        croak("Describe failed during %s->FETCH(%s): %ld: %s",
-              SvPV(sth,na), key, (long)SvIV(DBIc_ERR(imp_sth)),
-              SvPV(DBIc_ERRSTR(imp_sth),lna));
-    }
-
     i = DBIc_NUM_FIELDS(imp_sth);
 
+    /**************************************************************************/
     if (kl==4 && strEQ(key, "TYPE"))
     {
         AV *av;
@@ -2088,6 +1889,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
             av_store(av, i,
                      newSViv(ib2sql_type(imp_sth->out_sqlda->sqlvar[i].sqltype)));
     }
+    /**************************************************************************/
     else if (kl==5 && strEQ(key, "SCALE"))
     {
         AV *av;
@@ -2101,6 +1903,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
             av_store(av, i, newSViv(imp_sth->out_sqlda->sqlvar[i].sqlscale));
 
     }
+    /**************************************************************************/
     else if (kl==9 && strEQ(key, "PRECISION"))
     {
         AV *av;
@@ -2113,6 +1916,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
         while(--i >= 0)
             av_store(av, i, newSViv(imp_sth->out_sqlda->sqlvar[i].sqllen));
     }
+    /**************************************************************************/
     else if (kl==4 && strEQ(key, "NAME"))
     {
         AV *av;
@@ -2138,6 +1942,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
             }
         }
     }
+    /**************************************************************************/
     else if (kl==8 && strEQ(key, "NULLABLE"))
     {
         AV *av;
@@ -2150,6 +1955,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
         while(--i >= 0)
             av_store(av, i, boolSV(imp_sth->out_sqlda->sqlvar[i].sqltype & 1 != 0));
     }
+    /**************************************************************************/
     else if (kl==10 && strEQ(key, "CursorName"))
     {
         if (imp_sth->cursor_name == NULL)
@@ -2175,10 +1981,8 @@ int dbd_st_STORE_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv, SV *valuesv)
 {
     STRLEN  kl;
     char    *key = SvPV(keysv, kl);
-    int     on   = SvTRUE(valuesv);
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_st_STORE - %s\n", key);
+    DBI_TRACE(2, (DBILOGFP, "dbd_st_STORE - %s\n", key));
 
     if ((kl == 13) && (strcmp(key, "ib_cursorname") == 0))
     {
@@ -2231,13 +2035,12 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
 {
     D_imp_dbh_from_sth;
     isc_blob_handle handle = NULL;
-    ISC_STATUS      status[20];
+    ISC_STATUS      status[ISC_STATUS_LENGTH];
     long            total_length;
     char            *p, *seg;
-    int             is_text_blob, seg_len; 
+    int             is_text_blob, seg_len;
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "ib_blob_write\n");
+    DBI_TRACE(2, (DBILOGFP, "ib_blob_write\n"));
 
     /* we need a transaction  */
     if (!imp_dbh->tr)
@@ -2270,8 +2073,7 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
     seg_len = BLOB_SEGMENT;
     while (total_length > 0)
     {
-        if (dbis->debug >= 3)
-           PerlIO_printf(DBILOGFP, "ib_blob_write: %d bytes left\n", total_length);
+        DBI_TRACE(3, (DBILOGFP, "ib_blob_write: %d bytes left\n", total_length));
 
         /* set new segment start pointer */
         seg = p;
@@ -2299,15 +2101,14 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
             total_length -= seg_len;
         }
 
-        isc_put_segment(status, &handle, seg_len, seg);
+        isc_put_segment(status, &handle, (unsigned short) seg_len, seg);
         if (ib_error_check(sth, status))
         {
             isc_cancel_blob(status, &handle);
             return FALSE;
         }
 
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "ib_blob_write: %d bytes written\n", seg_len);
+        DBI_TRACE(3, (DBILOGFP, "ib_blob_write: %d bytes written\n", seg_len));
 
     }
 
@@ -2324,9 +2125,7 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
 static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                           IV sql_type)
 {
-    D_imp_dbh_from_sth;
     STRLEN     len;
-    ISC_STATUS status[ISC_STATUS_LENGTH];
     XSQLVAR    *ivar;
     int        retval;
     int        dtype;
@@ -2335,62 +2134,49 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     retval = TRUE;
     ivar = &(imp_sth->in_sqlda->sqlvar[i]);
 
-    if (dbis->debug >= 2)
-    {
-        PerlIO_printf(DBILOGFP, "enter ib_fill_isqlda. processing %d XSQLVAR",
-                      i + 1);
-        if (sql_type)
-            PerlIO_printf(DBILOGFP, "   Type %ld", (long) sql_type);
+    DBI_TRACE(2, (DBILOGFP, "enter ib_fill_isqlda. processing %d XSQLVAR"
+                            "   Type %ld"
+                            " ivar->sqltype=%ld\n",
+                            i + 1,
+                            (long) sql_type,
+                            ivar->sqltype));
 
-        PerlIO_printf(DBILOGFP, " ivar->sqltype=%ld\n", ivar->sqltype);
-    }
-
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "ib_fill_isqlda: XSQLDA len: %d\n",
-                      imp_sth->in_sqlda->sqln);
+    DBI_TRACE(3, (DBILOGFP, "ib_fill_isqlda: XSQLDA len: %d\n",
+                  imp_sth->in_sqlda->sqln));
 
     /* NULL indicator */
-
-    if (ivar->sqlind)
-    {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: Freeing sqlind\n");
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: Freeing sqlint, sqltype is still %d\n", ivar->sqltype);
-        safefree(ivar->sqlind);
-    }
-    ivar->sqlind = (short *) safemalloc(sizeof(short));
+    if (!(ivar->sqlind))
+        ivar->sqlind = (short *) safemalloc(sizeof(short));
 
     /* *(ivar->sqlind) = ivar->sqltype & 1 ? 0 : 1; */
 
     *(ivar->sqlind) = 0; /* default assume non-NULL */
 
+    /* it should be safe not to free here. test it */
+#if 0
     if (ivar->sqldata)
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: Freeing sqldata\n");
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: Freeing sqldata, sqltype is still %d\n", ivar->sqltype);
+        DBI_TRACE(3, (DBILOGFP, "ib_fill_isqlda: Freeing sqldata\n"));
+        DBI_TRACE(4, (DBILOGFP, "ib_fill_isqlda: Freeing sqldata, sqltype is %d\n", ivar->sqltype));
 
         safefree(ivar->sqldata);
         ivar->sqldata = (char *)NULL;
     }
+#endif
 
     if (!SvOK(value)) /* user passed an undef */
     {
         if (ivar->sqltype & 1) /* Field is NULLable */
         {
             /*
-            * The user has passed 'undef' for this scalar
-            * parameter and we use this to indicate that
-            * the parameter should have a NULL state.
+            * The user has passed 'undef' for this scalar parameter and we use
+            * this to indicate that the parameter should have a NULL state.
             */
             *(ivar->sqlind) = -1; /* NULL */
 
             /*
-            * Hence no need to fill in sqldata for this
-            * sqlvar, because it's NULL anyway.
-            * Skip to next loop iteration.
+            * Hence no need to fill in sqldata for this sqlvar, because it's
+            * NULL anyway.Skip to next loop iteration.
             */
             return retval;
         }
@@ -2413,48 +2199,24 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     /* workaround for date problem (bug #429820) */
     if (dtype == SQL_TEXT)
     {
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: checking for inconsistant bind params (ivar->sqltype = %d) (ivar->sqlsubtype = %d)\n", ivar->sqltype, ivar->sqlsubtype);
-    switch(ivar->sqlsubtype & ~1)
-        {
-        case (0 - SQL_TIMESTAMP):
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: inconsistant type found changing to SQL_TIMESTAMP\n");
-            ivar->sqltype = SQL_TIMESTAMP | (ivar->sqltype & 1);
-
-                /* data type minus nullable flag */
-                dtype = ivar->sqltype & ~1;
-        break;
-        case (0 - SQL_TYPE_DATE):
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: inconsistant type found changing to SQL_TYPE_DATE\n");
-            ivar->sqltype = SQL_TYPE_DATE | (ivar->sqltype & 1);
-
-                /* data type minus nullable flag */
-                dtype = ivar->sqltype & ~1;
-        break;
-        case (0 - SQL_TYPE_TIME):
-        if (dbis->debug >= 4)
-            PerlIO_printf(DBILOGFP, "ib_fill_isqlda: inconsistant type found changing to SQL_TYPE_TIME\n");
-            ivar->sqltype = SQL_TYPE_TIME | (ivar->sqltype & 1);
-
-                /* data type minus nullable flag */
-                dtype = ivar->sqltype & ~1;
-        break;
-        }
+        if (ivar->sqlsubtype == 0x77)
+#ifndef IB_API_V6
+            dtype = SQL_DATE;
+#else
+            dtype = SQL_TIMESTAMP;
+#endif
     }
 
     switch (dtype)
     {
         /**********************************************************************/
         case SQL_VARYING:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_VARYING\n");
+            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_VARYING\n"));
 
             if (ivar->sqldata == (char *) NULL)
             {
                 if ((ivar->sqldata = (char *)safemalloc(
-                    sizeof(char)*(ivar->sqllen + 1) + sizeof(short))) == NULL)
+                    sizeof(char) * (ivar->sqllen + 1) + sizeof(short))) == NULL)
                 {
                     do_error(sth, 2, "Cannot allocate buffer for TEXT input parameter \n");
                     retval = FALSE;
@@ -2466,11 +2228,11 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
              *((short *) ivar->sqldata) = len;
             /* is the scalar longer than the database field? */
 
-            if (len > (sizeof(char)*(ivar->sqllen+1)))
+            if (len > (sizeof(char) * (ivar->sqllen+1)))
             {
                 char err[80];
                 sprintf(err, "You are trying to put %d characters into a %d character field",
-                        len, (sizeof(char)*(ivar->sqllen+1)));
+                        len, (sizeof(char) * (ivar->sqllen + 1)));
                 do_error(sth, 2, err);
                 retval = FALSE;
                 break;
@@ -2485,8 +2247,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 
         /**********************************************************************/
         case SQL_TEXT:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_TEXT\n");
+            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_TEXT\n"));
 
             len = SvCUR(value);
             if (ivar->sqldata == (char *) NULL)
@@ -2501,12 +2262,12 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
             }
 
             /* is the scalar longer than the database field? */
-            if (len > (sizeof(char)*(ivar->sqllen+1)))
+            if (len > (sizeof(char) * (ivar->sqllen+1)))
             {
                 /* error? or truncate? */
                 char err[80];
                 sprintf(err, "You are trying to put %d characters into a %d character field",
-                        len, (sizeof(char)*(ivar->sqllen+1)));
+                        len, (sizeof(char) * (ivar->sqllen+1)));
                 do_error(sth, 2, err);
                 retval = FALSE;
             }
@@ -2521,18 +2282,16 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         /**********************************************************************/
         case SQL_SHORT:
         case SQL_LONG:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_SHORT/SQL_LONG\n");
+             DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_SHORT/SQL_LONG\n"));
 
         {
             char format[64];
             long p, q, r, result;
-            int  dscale;
             char *svalue;
 
             /* we need a bit of mem */
             if ((ivar->sqldata == (char *) NULL) &&
-                ((ivar->sqldata = (dtype == SQL_SHORT)? (char *) safemalloc(sizeof(short)): 
+                ((ivar->sqldata = (dtype == SQL_SHORT)? (char *) safemalloc(sizeof(short)):
                                                         (char *) safemalloc(sizeof(long ))) == NULL))
             {
                 do_error(sth, 2, "Cannot allocate buffer for SHORT/LONG input parameter ..\n");
@@ -2553,8 +2312,17 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 int  scale = (int) (pow(10.0, (double) -ivar->sqlscale));
                 int  dscale;
                 char *tmp;
+                char *neg;
 
                 sprintf(format, "%%ld.%%%dld%%1ld", -ivar->sqlscale);
+
+                /* negative -0.x hack */
+                neg = strchr(svalue, '-');
+                if (neg)
+                {
+                    svalue = neg + 1;
+                    len = strlen(svalue);
+                }
 
                 if (!sscanf(svalue, format, &p, &q, &r))
                 {
@@ -2564,7 +2332,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 }
 
                 /* Round up if r is 5 or greater */
-                if (r >= 5)        
+                if (r >= 5)
                 {
                     q++;            /* round q up by one */
                     p += q / scale; /* round p up by one if q overflows */
@@ -2577,7 +2345,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 if (dscale < 0) dscale = 0;
 
                 /* final result */
-                result = (long) (p * scale + (p < 0 ? -q : q) * (int) (pow(10.0, (double) dscale)));
+                result = (long) (p * scale + q * (int) (pow(10.0, (double) dscale))) * (neg? -1: 1);
             }
             /******************************************************************/
             else
@@ -2593,14 +2361,14 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 }
 
                 /* rounding */
-                if (r >= 5) 
+                if (r >= 5)
                 {
                     if (p < 0) p--; else p++;
                 }
 
                 /* the final result */
                 result = (long) p;
-            } 
+            }
 
             /* result in short or long? */
             if (dtype == SQL_SHORT)
@@ -2614,8 +2382,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         /**********************************************************************/
 #ifdef SQL_INT64
         case SQL_INT64:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_INT64\n");
+            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_INT64\n"));
 
         {
             char     *svalue;
@@ -2647,21 +2414,26 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
              * about how it interprets %Ld, %1Ld, etc.
              */
 
-/* 
- * Define INT64 sscanf formats for various platforms 
+/*
+ * Define INT64 sscanf formats for various platforms
  * using #defines eases the adding of a new platform (compiler/library)
  */
 
-#ifdef _MSC_VER   /* Microsoft C compiler/library */
+#if defined(_MSC_VER)        /* Microsoft C compiler/library */
 #  define S_INT64_FULL        "%%I64d.%%%dI64d%%1I64d"
 #  define S_INT64_NOSCALE     "%%I64d.%%1I64d"
 #  define S_INT64_DEC_FULL    ".%%%dI64d%%1I64d"
 #  define S_INT64_DEC_NOSCALE ".%%1I64d"
-#else             /* Others (Borland, GNU, ?)*/
+#elif defined(__BORLANDC__)  /* Borland compiler/library)*/
 #  define S_INT64_FULL        "%%Ld.%%%dLd%%1Ld"
 #  define S_INT64_NOSCALE     "%%Ld.%%1Ld"
 #  define S_INT64_DEC_FULL    ".%%%dLd%%1Ld"
 #  define S_INT64_DEC_NOSCALE ".%%1Ld"
+#else                        /* others: linux, xBSD, solaris, hp-ux, ... */
+#  define S_INT64_FULL        "%%lld.%%%dlld%%1lld"
+#  define S_INT64_NOSCALE     "%%lld.%%1lld"
+#  define S_INT64_DEC_FULL    ".%%%dlld%%1lld"
+#  define S_INT64_DEC_NOSCALE ".%%1lld"
 #endif
 
             p = q = r = (ISC_INT64) 0;
@@ -2674,8 +2446,17 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 int  scale = (int) (pow(10.0, (double) -ivar->sqlscale));
                 int  dscale;
                 char *tmp;
+                char *neg;
 
                 sprintf(format, S_INT64_FULL, -ivar->sqlscale);
+
+                /* negative -0.x hack */
+                neg = strchr(svalue, '-');
+                if (neg)
+                {
+                    svalue = neg + 1;
+                    len = strlen(svalue);
+                }
 
                 if (!sscanf(svalue, format, &p, &q, &r))
                 {
@@ -2688,9 +2469,8 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 p = _atoi64(svalue);
 #endif
 
-
                 /* Round up if r is 5 or greater */
-                if (r >= 5)        
+                if (r >= 5)
                 {
                     q++;            /* round q up by one */
                     p += q / scale; /* round p up by one if q overflows */
@@ -2703,7 +2483,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 if (dscale < 0) dscale = 0;
 
                 /* final result */
-                *(ISC_INT64 *) (ivar->sqldata) = (ISC_INT64) (p * scale + (p < 0 ? -q : q) * (int) (pow(10.0, (double) dscale)));
+                *(ISC_INT64 *) (ivar->sqldata) = (ISC_INT64) (p * scale + q * (int) (pow(10.0, (double) dscale))) * (neg? -1: 1);
             }
             /******************************************************************/
             else
@@ -2719,14 +2499,14 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 }
 
                 /* rounding */
-                if (r >= 5) 
+                if (r >= 5)
                 {
                     if (p < 0) p--; else p++;
                 }
 
                 /* the final result */
                 *(ISC_INT64 *) (ivar->sqldata) = (ISC_INT64) p;
-            } 
+            }
 
             break;
         }
@@ -2734,25 +2514,23 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 
         /**********************************************************************/
         case SQL_FLOAT:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_FLOAT\n");
+            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_FLOAT\n"));
 
             if ((ivar->sqldata == (char *) NULL) &&
                 ((ivar->sqldata = (char *) safemalloc(sizeof(float))) == NULL))
             {
-                PerlIO_printf(stderr, "Cannot allocate buffer for FLOAT input parameter #%d\n", i);
+                do_error(sth, 2, "Cannot allocate buffer for FLOAT input parameter..\n");
                 retval = FALSE;
             }
             else
-                *(float *) (ivar->sqldata) = SvNV(value);
+                *(float *) (ivar->sqldata) = (float) SvNV(value);
 
             break;
 
 
         /**********************************************************************/
         case SQL_DOUBLE:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_DOUBLE\n");
+            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_DOUBLE\n"));
 
             if ((ivar->sqldata == (char *) NULL) &&
                 ((ivar->sqldata = (char *) safemalloc(sizeof(double))) == NULL))
@@ -2766,46 +2544,26 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
             break;
 
         /**********************************************************************/
-#ifndef _ISC_TIMESTAMP_
+#ifndef IB_API_V6
         case SQL_DATE:
 #else
-        case SQL_TIMESTAMP: /* V6.0 macro */
-        case SQL_TYPE_TIME: /* V6.0 macro */
-        case SQL_TYPE_DATE: /* V6.0 macro */
+        case SQL_TIMESTAMP:
+        case SQL_TYPE_TIME:
+        case SQL_TYPE_DATE:
 #endif
-            if (dbis->debug >= 1)
-            {
-                switch(dtype)
-                {
-#ifndef _ISC_TIMESTAMP_
-                    case SQL_DATE:
-                        PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_DATE\n");
-                        break;
-#else
-                    case SQL_TIMESTAMP: /* V6.0 macro */
-                        PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_TIMESTAMP\n");
-                        break;
-                    case SQL_TYPE_TIME: /* V6.0 macro */
-                        PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_TYPE_TIME\n");
-                        break;
-                    case SQL_TYPE_DATE: /* V6.0 macro */
-                        PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_TYPE_DATE\n");
-                        break;
-#endif
-                }
-            }
-
-            /*
-             * Coerce the date literal into a CHAR string, so as
-             * to allow InterBase's internal date-string parsing
-             * to interpret the date.
-             */
             if (SvPOK(value))
             {
+                /*
+                 * Coerce the date literal into a CHAR string, so as
+                 * to allow InterBase's internal date-string parsing
+                 * to interpret the date.
+                 */
                 char *datestring = SvPV(value, len);
 
                 ivar->sqltype = SQL_TEXT | (ivar->sqltype & 1);
-                ivar->sqlsubtype = 0 - SQL_TIMESTAMP; /* workaround for date problem (bug #429820) */
+
+                /* workaround for date problem (bug #429820) */
+                ivar->sqlsubtype = 0x77; /* (0x77 is a random value) */
 
                 ivar->sqllen = len;
                 if (ivar->sqldata == (char *) NULL)
@@ -2827,29 +2585,103 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
             }
             else if (SvROK(value))
             {
-                AV *localtime = (AV *) SvRV(value);
+                struct tm times;               /* unix time struct    */
+                AV *list = (AV *) SvRV(value); /* AV with time items  */
+                SV **svp = AvARRAY(list);      /* AV as a C array     */
+                int items = av_len(list) + 1;  /* item count in array */
 
-                printf("XXX UNFINISHED FEATURE: input date as localtime() style list, util.c, line ~464\n");
+                /* check if we have enough items in the list */
+                if (items < 5) /* we ignore wday, yday, isdst */
+                {
+                    do_error(sth, 2, "Cannot bind date/time value. Not enough"
+                                     "items in localtime() style array");
+                    retval = FALSE;
+                    break;
+                }
 
-                /*
-                 * load the list into a struct tm
-                 * then call isc_encode_date()
-                 * and input the SQL_TIMESTAMP value
-                 */
+                /* fill in struct tm fields */
+                times.tm_sec  = SvIV(svp[0]);
+                times.tm_min  = SvIV(svp[1]);
+                times.tm_hour = SvIV(svp[2]);
+                times.tm_mday = SvIV(svp[3]);
+                times.tm_mon  = SvIV(svp[4]);
+                times.tm_year = SvIV(svp[5]);
+
+                /* free ivar->sqldata (prior call wasn't necessary an localtimes
+                 * style list) */
+                if (ivar->sqldata)
+                    safefree(ivar->sqldata);
+
+                /* encode for firebird/interbase, store value*/
+#ifndef IB_API_V6
+                {
+                    ISC_QUAD timestamp;
+                    isc_encode_date(&times, &timestamp);
+
+                    ivar->sqldata = (char *) safemalloc(sizeof(ISC_QUAD));
+
+                    /* we assume there's a fpsecs part after struct tm elements */
+                    if (items >= 10)
+                        TIMESTAMP_ADD_FPSECS(&timestamp, SvIV(svp[9]));
+
+                    *(ISC_QUAD *) ivar->sqldata = timestamp;
+                }
+#else
+                switch (dtype)
+                {
+                    case SQL_TIMESTAMP:
+                    {
+                        ISC_TIMESTAMP timestamp;
+                        isc_encode_timestamp(&times, &timestamp);
+
+                        ivar->sqldata = (char *) safemalloc(sizeof(ISC_TIMESTAMP));
+
+                        if (items >= 10)
+                            TIMESTAMP_ADD_FPSECS(&timestamp, SvIV(svp[9]));
+
+                        *(ISC_TIMESTAMP *) ivar->sqldata = timestamp;
+
+                        break;
+                    }
+
+                    case SQL_TYPE_TIME:
+                    {
+                        ISC_TIME sql_time;
+                        isc_encode_sql_time(&times, &sql_time);
+
+                        ivar->sqldata = (char *) safemalloc(sizeof(ISC_TIME));
+
+                        if (items >= 10)
+                            TIME_ADD_FPSECS(&sql_time, SvIV(svp[9]));
+
+                        *(ISC_TIME *) ivar->sqldata = sql_time;
+
+                        break;
+                    }
+
+                    case SQL_TYPE_DATE:
+                    {
+                        ISC_DATE sql_date;
+                        isc_encode_sql_date(&times, &sql_date);
+
+                        ivar->sqldata = (char *) safemalloc(sizeof(ISC_TIME));
+                        *(ISC_DATE *) ivar->sqldata = sql_date;
+
+                        break;
+                    }
+                }
+#endif
             }
             break;
 
 
         /**********************************************************************/
         case SQL_BLOB:
-            if (dbis->debug >= 1)
-                PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_BLOB\n");
+            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_BLOB\n"));
 
-        {
             /* we have an extra function for this */
             retval = ib_blob_write(sth, imp_sth, ivar, value);
             break;
-        }
 
         /**********************************************************************/
         case SQL_ARRAY:
@@ -2863,8 +2695,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     }
 
 
-    if (dbis->debug >= 3)
-       PerlIO_printf(DBILOGFP, "exiting ib_fill_isqlda: %d\n", retval);
+    DBI_TRACE(3, (DBILOGFP, "exiting ib_fill_isqlda: %d\n", retval));
 
     return retval;
 }
@@ -2873,11 +2704,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 int dbd_bind_ph(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 IV sql_type, SV *attribs, int is_inout, IV maxlen)
 {
-    STRLEN  len;
-    XSQLVAR *var;
-
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "dbd_bind_ph\n");
+    DBI_TRACE(2, (DBILOGFP, "dbd_bind_ph\n"));
 
     if (SvTYPE(value) > SVt_PVLV)
         croak("Can't bind a non-scalar value (%s)", neatsvpv(value,0));
@@ -2893,10 +2720,7 @@ int dbd_bind_ph(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     if ((int)SvIV(param) > imp_sth->in_sqlda->sqld)
         return TRUE;
 
-    var = &(imp_sth->in_sqlda->sqlvar[(int)SvIV(param)-1]);
-
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "Binding parameter: %d\n", (int)SvIV(param));
+    DBI_TRACE(3, (DBILOGFP, "Binding parameter: %d\n", (int)SvIV(param)));
 
     return ib_fill_isqlda(sth, imp_sth, param, value, sql_type);
 }
@@ -2908,8 +2732,7 @@ int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh)
 
     if (imp_dbh->tr)
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "ib_start_transaction: trans handle already started.\n");
+        DBI_TRACE(3, (DBILOGFP, "ib_start_transaction: trans handle already started.\n"));
         return TRUE;
     }
 
@@ -2922,8 +2745,7 @@ int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh)
     if (ib_error_check(h, status))
         return FALSE;
 
-    if (dbis->debug >= 3)
-        PerlIO_printf(DBILOGFP, "ib_start_transaction: transaction started.\n");
+    DBI_TRACE(3, (DBILOGFP, "ib_start_transaction: transaction started.\n"));
 
     return TRUE;
 }
@@ -2933,15 +2755,13 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "ib_commit_transaction\n");
-    if (dbis->debug >= 4)
-        PerlIO_printf(DBILOGFP, "ib_commit_transaction: DBIcf_AutoCommit = %d, imp_dbh->sth_ddl = %d\n", DBIc_has(imp_dbh, DBIcf_AutoCommit), imp_dbh->sth_ddl);
+    DBI_TRACE(2, (DBILOGFP, "ib_commit_transaction\n"));
+    DBI_TRACE(4, (DBILOGFP, "ib_commit_transaction: DBIcf_AutoCommit = %d, imp_dbh->sth_ddl = %d\n",
+                  DBIc_has(imp_dbh, DBIcf_AutoCommit), imp_dbh->sth_ddl));
 
     if (!imp_dbh->tr)
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "ib_commit_transaction: transaction already NULL.\n");
+        DBI_TRACE(3, (DBILOGFP, "ib_commit_transaction: transaction already NULL.\n"));
         /* In case we switched to use different TPB before we actually use */
         /* This transaction handle                                         */
         imp_dbh->sth_ddl = 0;
@@ -2950,14 +2770,13 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
     }
 
     /* do commit */
-    if ((imp_dbh->sth_ddl == 0) && is_softcommit(imp_dbh))
+    if ((imp_dbh->sth_ddl == 0) && (imp_dbh->soft_commit))
     {
-        if (dbis->debug >= 2)
-            PerlIO_printf(DBILOGFP, "try isc_commit_retaining\n");
+        DBI_TRACE(2, (DBILOGFP, "try isc_commit_retaining\n"));
 
-        /* commit and close transaction */
+        /* commit but don't close transaction */
         isc_commit_retaining(status, &(imp_dbh->tr));
-        
+
         if (ib_error_check(h, status))
             return FALSE;
     }
@@ -2976,8 +2795,7 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
             imp_dbh->sth_ddl = 0;
         }
 
-        if (dbis->debug >= 2)
-            PerlIO_printf(DBILOGFP, "try isc_commit_transaction\n");
+        DBI_TRACE(2, (DBILOGFP, "try isc_commit_transaction\n"));
 
 
         /* commit and close transaction (sets handle to NULL) */
@@ -2989,8 +2807,7 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
         imp_dbh->tr = 0L;
     }
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "ib_commit_transaction succeed.\n");
+    DBI_TRACE(2, (DBILOGFP, "ib_commit_transaction succeed.\n"));
 
     return TRUE;
 }
@@ -2999,38 +2816,59 @@ int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "ib_rollback_transaction\n");
+    DBI_TRACE(2, (DBILOGFP, "ib_rollback_transaction\n"));
 
 
     if (!imp_dbh->tr)
     {
-        if (dbis->debug >= 3)
-            PerlIO_printf(DBILOGFP, "ib_rollback_transaction: transaction already NULL.\n");
+        DBI_TRACE(3, (DBILOGFP, "ib_rollback_transaction: transaction already NULL.\n"));
 
         imp_dbh->sth_ddl = 0;
 
         return TRUE;
     }
 
-    /* close all open statement handles */
-    while (imp_dbh->first_sth != NULL)
+/* no isc_rollback_retaining in IB prior to 6 */
+#ifdef IB_API_V6
+    if ((imp_dbh->sth_ddl == 0) && (imp_dbh->soft_commit))
     {
-        /* finish and destroy sth */
-        dbd_st_finish((SV*)DBIc_MY_H(imp_dbh->first_sth), imp_dbh->first_sth);
-        dbd_st_destroy(NULL, imp_dbh->first_sth);
+        DBI_TRACE(2, (DBILOGFP, "try isc_rollback_retaining\n"));
+
+        /* rollback but don't close transaction */
+        isc_rollback_retaining(status, &(imp_dbh->tr));
+
+        if (ib_error_check(h, status))
+            return FALSE;
+    }
+    else
+#endif /* IB_API_V6 */
+    {
+        /* close all open statement handles */
+        if ((imp_dbh->sth_ddl > 0) || !(DBIc_has(imp_dbh, DBIcf_AutoCommit)))
+        {
+            while (imp_dbh->first_sth != NULL)
+            {
+                /* finish and destroy sth */
+                dbd_st_finish((SV*)DBIc_MY_H(imp_dbh->first_sth), imp_dbh->first_sth);
+                dbd_st_destroy(NULL, imp_dbh->first_sth);
+            }
+
+            imp_dbh->sth_ddl = 0;
+        }
+
+        DBI_TRACE(2, (DBILOGFP, "try isc_rollback_transaction\n"));
+
+
+        /* rollback and close transaction (sets handle to NULL) */
+        isc_rollback_transaction(status, &(imp_dbh->tr));
+
+        if (ib_error_check(h, status))
+            return FALSE;
+
+        imp_dbh->tr = 0L;
     }
 
-    imp_dbh->sth_ddl = 0;
-
-    isc_rollback_transaction(status, &(imp_dbh->tr));
-    imp_dbh->tr = 0L;
-
-    if (ib_error_check(h, status))
-        return FALSE;
-
-    if (dbis->debug >= 2)
-        PerlIO_printf(DBILOGFP, "ib_rollback_transaction succeed\n");
+    DBI_TRACE(2, (DBILOGFP, "ib_rollback_transaction succeed\n"));
 
     return TRUE;
 }

@@ -1,8 +1,8 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40alltypes.t,v 1.7 2002/08/03 19:29:03 danielritz Exp $
+#   $Id: 40datetime.t,v 1.1 2002/08/03 19:29:03 danielritz Exp $
 #
-#   This is a test for all data types handling.
+#   This is a test for date/time types handling with localtime() style.
 #
 
 
@@ -14,17 +14,15 @@ $test_user = '';
 $test_password = '';
 
 # hmm this must be known prior to test. ugly...
-my $num_of_fields = 16;
+my $num_of_fields = 3;
 
 #
 #   Include lib.pl
 #
 use DBI;
-use vars qw($verbose $timestamp);
+use vars qw($verbose @times);
 
-my ($sec, $min, $h, $d, $m, $y) = (localtime())[0..5];
-$y += 1900; $m++;
-$timestamp = sprintf("%04u-%02u-%02u %02u:%02u", $y, $m, $d, $h, $min);
+@times = localtime();
 
 #DBI->trace(5, "40alltypes.txt");
 
@@ -49,22 +47,30 @@ sub ServerError() {
 }
 
 my @is_match = (
-    sub { shift->[0]->[0] == 30000},
-    sub { shift->[0]->[1] == 1000},
-    sub { shift->[0]->[2] eq 'Edwin        '},
-    sub { shift->[0]->[3] eq 'Edwin Pratomo       '},
-    sub { shift->[0]->[4] eq 'A string'},
-    sub { shift->[0]->[5] == 5000},
-    sub { shift->[0]->[6] eq '1.20000004768372'},
-    sub { shift->[0]->[7] == 1.44},
-    sub { shift->[0]->[8] eq $timestamp},
-    sub { shift->[0]->[9] =~ /^\d\d-\d\d-\d{4}$/},
-    sub { shift->[0]->[10] =~ /^\d\d:\d\d$/},
-    sub { shift->[0]->[11] == 32.71},
-    sub { shift->[0]->[12] == -32.71},
-    sub { shift->[0]->[13] == 123456.79},
-    sub { shift->[0]->[14] == -123456.79},
-    sub { shift->[0]->[15] eq '86753090000.868'},
+    sub
+    {
+        my $ref = shift->[0]->[0];
+        return ($$ref[0] == $times[0]) &&
+               ($$ref[1] == $times[1]) &&
+               ($$ref[2] == $times[2]) &&
+               ($$ref[3] == $times[3]) &&
+               ($$ref[4] == $times[4]) &&
+               ($$ref[5] == $times[5]);
+    },
+    sub
+    {
+        my $ref = shift->[0]->[1];
+        return ($$ref[3] == $times[3]) &&
+               ($$ref[4] == $times[4]) &&
+               ($$ref[5] == $times[5]);
+    },
+    sub
+    {
+        my $ref = shift->[0]->[2];
+        return ($$ref[0] == $times[0]) &&
+               ($$ref[1] == $times[1]) &&
+               ($$ref[2] == $times[2]);
+    }
 );
 
 #
@@ -90,22 +96,9 @@ while (Testing()) {
     my $table = 'builtin';
     my $def =<<"DEF";
 CREATE TABLE $table (
-    INTEGER_    INTEGER,
-    SMALLINT_   SMALLINT,
-    CHAR13_     CHAR(13),
-    CHAR20_     CHAR(20),
-    VARCHAR13_  VARCHAR(13),
-    DECIMAL_    DECIMAL,
-    FLOAT_      FLOAT,
-    DOUBLE_     DOUBLE PRECISION,
     A_TIMESTAMP  TIMESTAMP,
     A_DATE       DATE,
-    A_TIME       TIME,
-    NUMERIC_AS_SMALLINT  NUMERIC(4,3),
-    NUMERIC_AS_SMALLINT2 NUMERIC(4,3),
-    NUMERIC_AS_INTEGER   NUMERIC(9,3),
-    NUMERIC_AS_INTEGER2  NUMERIC(9,3),
-    A_SIXTYFOUR  NUMERIC(18,3)
+    A_TIME       TIME
 )
 DEF
 
@@ -115,52 +108,24 @@ DEF
     my $stmt =<<"END_OF_QUERY";
 INSERT INTO $table
     (
-    INTEGER_,
-    SMALLINT_,
-    CHAR13_,
-    CHAR20_,
-    VARCHAR13_,
-    DECIMAL_,
-    FLOAT_,
-    DOUBLE_,
     A_TIMESTAMP,
     A_DATE,
-    A_TIME,
-    NUMERIC_AS_SMALLINT,
-    NUMERIC_AS_SMALLINT2,
-    NUMERIC_AS_INTEGER,
-    NUMERIC_AS_INTEGER2,
-    A_SIXTYFOUR
+    A_TIME
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?)
 END_OF_QUERY
 
     Test($state or $cursor = $dbh->prepare($stmt))
        or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or $cursor->execute(
-    30000,
-    1000,
-    'Edwin',
-    'Edwin Pratomo',
-    'A string',
-    5000,
-    1.2,
-    1.44,
-    $timestamp,
-    'TOMORROW',
-    'NOW',
-    32.71,
-    -32.71,
-    123456.7895,
-    -123456.7895,
-    86753090000.8675309)
+    \@times, \@times, \@times)
     ) or DbiError($cursor->err, $cursor->errstr);
 
     Test($state or $cursor = $dbh->prepare("SELECT * FROM $table", {
-        ib_timestampformat => '%Y-%m-%d %H:%M',
-        ib_dateformat => '%m-%d-%Y',
-        ib_timeformat => '%H:%M',
+        ib_timestampformat => 'TM',
+        ib_dateformat => 'TM',
+        ib_timeformat => 'TM',
     })) or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or $cursor->execute)

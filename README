@@ -1,8 +1,9 @@
 DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
-   $Id: README,v 1.9 2001/12/20 18:51:09 danielritz Exp $
+   $Id: README,v 1.10 2002/08/12 16:04:26 danielritz Exp $
 
    Copyright (c) 1999-2001  Edwin Pratomo
+   Portions Copyright (c) 2001-2002  Daniel Ritz 
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file.
@@ -26,8 +27,8 @@ REQUIREMENTS:
 
         In order to compile with Borland compiler you need pmake:
           http://www.cpan.org/authors/id/NI-S/Make-1.00.tar.gz
-	dmake would work to (building) but has problems creating PPD file
-	  http://www.cpan.org/authors/id/GSAR/dmake-4.1pl1-win32.zip
+        dmake would work too (building) but has problems creating PPD file
+          http://www.cpan.org/authors/id/GSAR/dmake-4.1pl1-win32.zip
 
 
       - or Microsoft VC++ 6.0

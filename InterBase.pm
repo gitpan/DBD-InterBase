@@ -1,4 +1,4 @@
-#   $Id: InterBase.pm,v 1.38 2002/04/05 03:04:43 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.44 2002/09/09 11:51:34 edpratomo Exp $
 #
 #   Copyright (c) 1999-2002 Edwin Pratomo
 #
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.30';
+$VERSION = '0.40';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -55,7 +55,7 @@ sub _OdbcParse($$$)
 
     while (length($dsn)) 
     {
-        if ($dsn =~ /([^;]*)[;](.*)/) 
+        if ($dsn =~ /([^;]*)[;]\r?\n?(.*)/s) 
         {
             $val = $1;
             $dsn = $2;
@@ -120,7 +120,7 @@ sub connect
 
     DBD::InterBase->_OdbcParse($dsn, $private_attr_hash,
                                ['database', 'host', 'port', 'ib_role', 
-                                'ib_charset', 'ib_dialect', 'ib_cache']);
+                                'ib_charset', 'ib_dialect', 'ib_cache', 'ib_lc_time']);
 
     # second attr args will be retrieved using DBIc_IMP_DATA
     my $dbh = DBI::_new_dbh($drh, {}, $private_attr_hash);
@@ -273,6 +273,14 @@ sub ping
     return $ret;
 }
 
+sub get_info {
+    my ($dbh, $info_type) = @_;
+    require DBD::InterBase::GetInfo;
+    my $v = $DBD::InterBase::GetInfo::info{int($info_type)};
+    $v = $v->($dbh) if ref $v eq 'CODE';
+    return $v;
+} 
+
 1;
 
 __END__
@@ -316,19 +324,28 @@ following syntax:
 This connects to the database $dbname at localhost as SYSDBA user with the
 default password. 
 
-The following connect statement shows all possible parameters: 
+Multiline DSN is acceptable. Here is an example of connect statement which uses all 
+possible parameters: 
 
- $dsn =
- "dbi:InterBase:dbname=$dbname;host=$host;ib_dialect=$dialect;ib_role=$role;ib_charset=$charset;ib_cache=$cache";
+   $dsn =<< "DSN";
+ dbi:InterBase:dbname=$dbname;
+ host=$host;
+ ib_dialect=$dialect;
+ ib_role=$role;
+ ib_charset=$charset;
+ ib_cache=$cache
+ DSN
+
  $dbh =  DBI->connect($dsn, $username, $password);
 
 The $dsn is prefixed by 'dbi:InterBase:', and consists of key-value
-parameters separated by B<semicolons>. The following is the list of valid
-parameters and their respective meanings:
+parameters separated by B<semicolons>. New line may be added after the
+semicolon. The following is the list of valid parameters and their
+respective meanings:
 
     parameter   meaning                             optional?
     ---------------------------------------------------------
-    database    path to the database                mandatory
+    database    path to the database                required
     dbname      path to the database
     db          path to the database
     host        hostname (not IP address)           optional
@@ -338,10 +355,16 @@ parameters and their respective meanings:
     ib_cache    number of database cache buffers    optional
 
 B<database> could be used interchangebly with B<dbname> and B<db>. 
-If a host is specified, connection will be made using TCP/IP sockets. 
-For example, to connect to a Windows host, the $dsn will look like this:
+To connect to a remote host, use the B<host> parameter. 
+Here is an example of DSN to connect to a remote Windows host:
 
  $dsn = "dbi:InterBase:db=C:/temp/test.gdb;host=rae.cumi.org;ib_dialect=3";
+
+Firebird as of version 1.0 listens on port specified within the services
+file. To connect to port other than the default 3050, add the port number at
+the end of host name, separated by a slash. Example:
+
+ $dsn = 'dbi:InterBase:db=/data/test.gdb;host=localhost/3060';
 
 InterBase 6.0 introduces B<SQL dialect> to provide backward compatibility with
 databases created by older versions of InterBase. In short, SQL dialect
@@ -362,7 +385,7 @@ with lots of users. A detailed reading can be found at:
  http://www.ibphoenix.com/ibp_sqlroles.html
 
 If B<ib_cache> is not specified, the default database's cache size value will be 
-used. The InterBase Operations Guide discusses in full length the importance of 
+used. The InterBase Operation Guide discusses in full length the importance of 
 this parameter to gain the best performance.
 
 =item B<available_drivers>
@@ -388,7 +411,7 @@ Implemented by DBI, no driver-specific impact.
 
 See Common Methods. 
 
-=head1 METHODS COMMON TO ALL HANDLES
+=head1 METHODS COMMON TO ALL DBI HANDLES
 
 =over 4
 
@@ -422,12 +445,12 @@ Implemented by DBI, no driver-specific impact.
 
 =item B<func>
 
-See B<Transactions> section for information about invoking C<set_tx_param()>
+See B<Transactions> section for information about invoking C<ib_set_tx_param()>
 from func() method.
 
 =back
 
-=head1 ATTRIBUTES COMMON TO ALL HANDLES
+=head1 ATTRIBUTES COMMON TO ALL DBI HANDLES
 
 =over 4
 
@@ -787,7 +810,7 @@ Not supported by the driver.
 
 =back
 
-=head1 FURTHER INFORMATION
+=head1 DRIVER SPECIFIC INFORMATION
 
 =head2 Transactions
 
@@ -805,7 +828,7 @@ start a new transaction. A disconnect will issue a rollback.
 InterBase provides fine control over transaction behavior, where users can
 specify the access mode, the isolation level, the lock resolution, and the 
 table reservation (for a specified table). For this purpose,
-C<set_tx_param()> database handle method is available. 
+C<ib_set_tx_param()> database handle method is available. 
 
 Upon a successful C<connect()>, these default parameter values will be used
 for every SQL operation:
@@ -814,17 +837,17 @@ for every SQL operation:
     Isolation level:    concurrency
     Lock resolution:    wait
 
-Any of the above value can be changed using C<set_tx_param()>.
+Any of the above value can be changed using C<ib_set_tx_param()>.
 
 =over 4
 
-=item B<set_tx_param> 
+=item B<ib_set_tx_param> 
 
  $dbh->func( 
     -access_mode     => 'read_write',
     -isolation_level => 'read_committed',
     -lock_resolution => 'wait',
-    'set_tx_param'
+    'ib_set_tx_param'
  );
 
 Valid value for C<-access_mode> is C<read_write>, or C<read_only>. 
@@ -836,7 +859,7 @@ anonymous array:
 
  $dbh->func( 
     -isolation_level => ['read_committed', 'record_version'],
-    'set_tx_param'
+    'ib_set_tx_param'
  );
 
 Table reservation is supported since C<DBD::InterBase 0.30>. Names of the
@@ -860,7 +883,7 @@ with C<read> lock and C<protected> access:
                 access  => 'protected',
             },
         },
-    'set_tx_param'
+    'ib_set_tx_param'
  );
 
 Possible table reservation parameters are:
@@ -882,8 +905,110 @@ transaction parameters (as with C<AutoCommit> off), but also commits the
 current transaction. The new transaction parameters will be used in
 any newly started transaction. 
 
-C<set_tx_param()> can also be invoked with no parameter in which it resets
+C<ib_set_tx_param()> can also be invoked with no parameter in which it resets
 transaction parameters to the default value.
+
+=back
+
+=head2 DATE, TIME, and TIMESTAMP Formats
+
+C<DBD::InterBase> supports various formats for query results of DATE, TIME,
+and TIMESTAMP types. 
+
+By default, it uses "%c" for TIMESTAMP, "%x" for DATE, and "%X" for TIME,
+and pass them to ANSI C's strftime() function to format your query results.
+These values are respectively stored in ib_timestampformat, ib_dateformat,
+and ib_timeformat attributes, and may be changed in two ways:
+
+=over 
+
+=item * At $dbh level
+
+This replaces the default values. Example:
+
+ $dbh->{ib_timestampformat} = '%m-%d-%Y %H:%M';
+ $dbh->{ib_dateformat} = '%m-%d-%Y';
+ $dbh->{ib_timeformat} = '%H:%M';
+
+=item * At $sth level
+
+This overrides the default values only for the currently prepared statement. Example:
+
+ $attr = {
+    ib_timestampformat => '%m-%d-%Y %H:%M',
+    ib_dateformat => '%m-%d-%Y',
+    ib_timeformat => '%H:%M',
+ };
+ # then, pass it to prepare() method. 
+ $sth = $dbh->prepare($sql, $attr);
+
+=back
+
+Since locale settings affect the result of strftime(), if your application
+is designed to be portable across different locales, you may consider using these
+two special formats: 'TM' and 'ISO'. C<TM> returns a 9-element list, much like
+Perl's localtime(). The C<ISO> format applies sprintf()'s pattern
+"%04d-%02d-%02d %02d:%02d:%02d.%04d" for TIMESTAMP, "%04d-%02d-%02d" for
+DATE, and "%02d:%02d:%02d.%04d" for TIME. 
+
+C<$dbh-E<gt>{ib_time_all}> can be used to specify all of the three formats at
+once. Example:
+
+ $dbh->{ib_time_all} = 'TM';
+
+
+=head2 Using Event Alerter
+
+This new feature is experimental and subjects to change. 
+
+=over
+
+=item C<ib_init_event>
+
+ $evh = $dbh->func(@event_names, 'ib_init_event');
+
+Initialize an event handle from several event names.
+
+=item C<ib_wait_event>
+
+ $dbh->func($evh, 'ib_wait_event');
+
+Wait synchronously for particular events registered via event handle $evh.
+
+=item C<ib_register_callback>
+
+ $dbh->func($evh, sub { print "callback..\n" }, 'ib_register_callback');
+
+Register a callback for asynchronous wait.
+
+=item C<ib_reinit_event>
+
+ $dbh->func($evh, 'ib_reinit_event');
+
+Reinitialize event handle.
+
+=back
+
+=head2 Retrieving Firebird/InterBase specific database information
+
+=over
+
+=item C<ib_database_info>
+
+ $hash_ref = $dbh->func(@info, 'ib_database_info');
+ $hash_ref = $dbh->func([@info], 'ib_database_info');
+
+Retrieve information from current database connection. 
+
+=back
+
+=head2 Obsolete Features
+
+=over 
+
+=item Private Method
+
+C<set_tx_param()> is obsoleted by C<ib_set_tx_param()>.
 
 =back
 
@@ -970,14 +1095,10 @@ an eval block.
 
 =item * DBI by Tim Bunce <Tim.Bunce@pobox.com>
 
-=item * DBD::InterBase by Edwin Pratomo <edpratomo@cpan.org>
+=item * DBD::InterBase by Edwin Pratomo <edpratomo@cpan.org> and Daniel Ritz 
+<daniel.ritz@gmx.ch>.
 
-Daniel Ritz <daniel_ritz@gmx.ch> is the SPARC Solaris and Win32 porter, helps hunting bugs and adding new features. 
-
-Ilya Verlinsky <ilya@wsi.net> contributes bug fixes.
-
-This module is partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
-DBD::mysql, and Edmund Mergl's DBD::Pg.
+This module is originally based on the work of Bill Karwin's IBPerl.
 
 =back
 
@@ -1001,6 +1122,7 @@ DBI(3).
 =head1 COPYRIGHT
 
 The DBD::InterBase module is Copyright (c) 1999-2002 Edwin Pratomo.
+Portions Copyright (c) 2001-2002  Daniel Ritz.
 
 The DBD::InterBase module is free software. 
 You may distribute under the terms of either the GNU General Public
@@ -1010,17 +1132,9 @@ for commercial distribution without the prior approval of the author.
 
 =head1 ACKNOWLEDGEMENTS
 
-Pavel Zheltouhov <I<pavlo@tvrn.ru>> wrote the initial code for table reservation.
-
-Peter Wilkinson <I<pwilkinson@thirdfloor.com.au>> sent a patch for Makefile.PL
-to add support for Visual C++ 7 / PPM.
-
-Mark D. Anderson <I<mda@discerning.com>>, and Michael Samanov
-<I<samanov@yahoo.com>> gave important feedbacks and ideas during the early
-development days of this XS version. 
-
-Michael Arnett <I<marnett@mediaone.net>>, Flemming Frandsen <I<dion@swamp.dk>>,
-Mike Shoyher <I<msh@e-labs.ru>>, Christiaan Lademann <I<cal@zls.de>> sent me 
-patches for the first version. 
+An attempt to enumerate all who have contributed patches (may misses some):
+Igor Klingen, Sergey Skvortsov, Ilya Verlinsky, Pavel Zheltouhov, Peter
+Wilkinson, Mark D. Anderson, Michael Samanov, Michael Arnett, Flemming
+Frandsen, Mike Shoyher, Christiaan Lademann. 
 
 =cut
