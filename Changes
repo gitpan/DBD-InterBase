@@ -3,6 +3,28 @@ Revision history for Perl extension DBD::InterBase.
 0.01  Wed Apr 26 16:45:07 2000
 	- original version; created by h2xs 1.19
 
+March 24 2001
+* Added private method set_tx_param() for controlling transaction parameters
+  (experimental)
+* More robust execute()
+* Added more tests
+* Easier `make test`. Now allows user to specify test database, as well as 
+  username, and password to connect. 
+  The test database creation is automated, if it doesn't exist.
+* Clean compile with MSVC. But in Windows, there's bug with BLOB fields.
+
+January 22 2001
+* Memory leak problem fixed
+* Added Flemming's submitted patch to zero sqlda before being used.
+* SQL dialect 1 now can access timestamp field. 
+* Lighter, faster $dbh->ping(). I hope this is more stable, as well.
+
+Sept 27 2000
+* Replace isc_commit_retaining() with isc_commit_transaction. Flemming
+suspected this as the source of some deadlock problem.
+* Fixed dbd_db_rollback(). Now no longer starts a new transaction after
+rollback.
+
 Aug 30 2000
 * Patch to DBI.pm of DBI-1.14, fixes a subtle bug of fetchall_arrayref().
 The patched DBI allows DBD::InterBase to work with DBIx::Tree 0.91. Cool!

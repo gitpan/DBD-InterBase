@@ -1,8 +1,16 @@
 # database specific definitions for a 'InterBase' database
 
-$test_dsn      = $ENV{'DBI_DSN'}   ||  "DBI:InterBase:database=test.gdb;ib_dialect=3";
-$test_user     = $ENV{'DBI_USER'}  ||  "SYSDBA";
-$test_password = $ENV{'DBI_PASS'}  ||  "masterkey";
+for (qw[test.conf t/test.conf]) {
+	if (-r $_) {
+		open F, $_ or die "Can't open $_: $!";
+		($test_dsn, $test_user, $test_password) = map {chomp;$_} <F>;
+		close F;
+	}
+}
+
+$test_dsn      ||= $ENV{'DBI_DSN'};
+$test_user     ||= $ENV{'DBI_USER'};
+$test_password ||= $ENV{'DBI_PASS'};
 
 #   This function generates a mapping of ANSI type names to
 #   database specific type names; it is called by TableDefinition().

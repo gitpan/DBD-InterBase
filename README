@@ -1,8 +1,8 @@
 DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
-   $Id: README,v 1.3 2000/09/07 15:21:34 edpratomo Exp $
+   $Id: README,v 1.4 2001/03/24 13:26:42 edpratomo Exp $
 
-   Copyright (c) 1999,2000  Edwin Pratomo
+   Copyright (c) 1999-2001  Edwin Pratomo
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file.
@@ -23,18 +23,6 @@ DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
 BUILDING:
 
-  set-up these environment variables:
-    ISC_USER  The username to use to connect to the database
-    ISC_PASSWORD  The password to use to connect to the database
-  
-  and:
-    DBI_DSN     The DSN to be used to connect, default to 
-                'dbi:InterBase:db=test.gdb;ib_dialect=3'
-    DBI_USER    The DBI username to connect
-    DBI_PASS    The password of the username
-
-  Then run:
-  isql -i t/create.sql
   perl Makefile.PL
   make
 

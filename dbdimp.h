@@ -1,7 +1,7 @@
 /*
-   $Id: dbdimp.h,v 1.6 2000/08/18 21:28:05 edpratomo Exp $
+   $Id: dbdimp.h,v 1.9 2001/02/12 18:24:31 edpratomo Exp $
 
-   Copyright (c) 1999,2000  Edwin Pratomo
+   Copyright (c) 1999-2001  Edwin Pratomo
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -41,7 +41,6 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 #undef	SQL_VARCHAR
 
 #include <ibase.h>
-#include <malloc.h>
 
 /* defines */
 
@@ -61,11 +60,21 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 	*dpb = byte;				\
 	dpb += 1;					\
     }
+
+/*
+ * 2001-02-13 - Mike Shoyher: It's illegal to assign int to char pointer
+ * on platforms where strict aligment is required (like SPARC or m68k). For
+ * x86 it isn't important.
+ * *((int *)dpb) = isc_vax_integer((char *) &integer, 4); \
+ */
+
 #define DPB_FILL_INTEGER(dpb, integer)			\
     {							\
+	int tmp;					\
 	*(dpb) = 4;					\
 	dpb += 1;					\
-	*((int *)dpb) = isc_vax_integer((char *) &integer, 4); \
+    tmp = isc_vax_integer((char *) &integer, 4); \
+    memcpy(dpb,&tmp,sizeof(tmp));                \
 	dpb += 4;					\
     }
 #define DPB_FILL_STRING(dpb, string)			\

@@ -1,7 +1,7 @@
 /*
    $Id: InterBase.h,v 1.2 2000/08/18 13:04:41 edpratomo Exp $
 
-   Copyright (c) 1999,2000  Edwin Pratomo
+   Copyright (c) 1999-2001  Edwin Pratomo
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,

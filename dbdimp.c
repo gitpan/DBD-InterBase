@@ -1,7 +1,7 @@
 /* 
-   $Id: dbdimp.c,v 1.12 2000/08/28 11:00:33 edpratomo Exp $ 
+   $Id: dbdimp.c,v 1.23 2001/03/24 03:22:53 edpratomo Exp $ 
 
-   Copyright (c) 1999,2000  Edwin Pratomo
+   Copyright (c) 1999-2001  Edwin Pratomo
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -35,6 +35,7 @@ DBISTATE_DECLARE;
     if (!(sqlda = (XSQLDA*) safemalloc(XSQLDA_LENGTH(len)))) { \
         do_error(sth, 2, "Fail to allocate XSQLDA");    \
     } \
+    memset(sqlda,0,XSQLDA_LENGTH(len)); \
     sqlda->sqln = len; \
     sqlda->version = SQLDA_VERSION1; \
 }
@@ -50,17 +51,17 @@ int create_cursor_name(SV *sth, imp_sth_t *imp_sth)
 
     sprintf(imp_sth->cursor_name, "perl%016.16x", imp_sth->stmt);
     isc_dsql_set_cursor_name(status, &(imp_sth->stmt),
-    imp_sth->cursor_name, (unsigned short) NULL);
+        imp_sth->cursor_name, (unsigned short) NULL);
     if (ib_error_check(sth, status))
         return FALSE;
     else 
         return TRUE;
 }
 
-void* dump_str(char *src, int len) 
+void dump_str(char *src, int len) 
 {
     int i;
-    fprintf(DBILOGFP, "Dumping string: ");
+    PerlIO_printf(DBILOGFP, "Dumping string: ");
     for (i = 0; i < len; i++) {
         fputc(src[i], DBILOGFP);
     }
@@ -130,6 +131,10 @@ void do_error(SV *h, int rc, char *what)
 {
     D_imp_xxh(h);
     SV *errstr = DBIc_ERRSTR(imp_xxh);
+
+    if (dbis->debug >= 2)
+    PerlIO_printf(DBILOGFP, "Entering do_error..\n");
+
     sv_setiv(DBIc_ERR(imp_xxh), (IV)rc);
     sv_setpv(errstr, what);
     DBIh_EVENT2(h, ERROR_event, DBIc_ERR(imp_xxh), errstr);
@@ -272,7 +277,9 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     short dpb_length = 0;
     imp_dbh->db = 0L;
     imp_dbh->tr = 0L;
-        
+	imp_dbh->tpb_buffer = NULL;
+	imp_dbh->tpb_length = 0;
+
     /* 
      * Parse DSN and init values 
      */
@@ -348,15 +355,6 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     if ((dpb_buffer = (char*) safemalloc(1024 * sizeof(char))) == NULL) 
     {
         do_error(dbh, 2, "Not enough memory to allocate DPB");
-        return FALSE;
-    }
-
-    /* 
-     * Allocate TPB 
-     */
-    if ((imp_dbh->tpb_buffer = (char*) safemalloc(10 * sizeof(char))) == NULL) 
-    {
-        do_error(dbh, 2, "Not enough memory to allocate TPB");
         return FALSE;
     }
 
@@ -443,6 +441,36 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     return TRUE;
 }
 
+int dbd_db_ping(SV *dbh)
+{
+    char id;
+    D_imp_dbh(dbh);
+    ISC_STATUS status[ISC_STATUS_LENGTH];
+
+    /* 2001-02-14 - Peter Wilkinson:
+	 * the ms compiler didn't like the line that I've commented out:
+     * char db_items[] = {}; 
+     */
+    char buffer[100];
+    
+    if (dbis->debug >= 1) { PerlIO_printf(DBILOGFP, "dbd_db_ping\n"); }
+
+    if (isc_database_info(
+        status, 
+        &(imp_dbh->db), 
+        0, NULL, /* okay here's the new values - edwin */
+/*
+        sizeof(db_items), 
+        db_items,
+ */       
+        sizeof(buffer), buffer))
+    {
+        if (ib_error_check(dbh, status))
+            return FALSE;
+    }
+    return TRUE;
+}
+
 int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
 {
     dTHR;
@@ -456,11 +484,12 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
 
     /* rollback if AutoCommit = off */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit) == FALSE) {
-
-        /* rollback and close trans context */
-        isc_rollback_transaction(status, &(imp_dbh->tr));
-        if (ib_error_check(dbh, status))
-            return FALSE;
+        if (imp_dbh->tr) {
+            /* rollback and close trans context */
+            isc_rollback_transaction(status, &(imp_dbh->tr));
+            if (ib_error_check(dbh, status))
+                return FALSE;
+        }
     } else {
         /* if AutoCommit On, proceed with InterBase's default behavior */
         
@@ -470,6 +499,8 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
             return FALSE;
         */
     }
+    if (imp_dbh->tpb_buffer) 
+        safefree(imp_dbh->tpb_buffer);
 
     isc_detach_database(status, &(imp_dbh->db));
     if (ib_error_check(dbh, status))
@@ -506,12 +537,13 @@ int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
     /* if AutoCommit = off, execute commit without closing transaction 
      * context 
      */
-    isc_commit_retaining(status, &(imp_dbh->tr));
-    if (ib_error_check(dbh, status)) 
-        return FALSE;
+/*    isc_commit_retaining(status, &(imp_dbh->tr)); */
 
+    if (!ib_commit_transaction(dbh, imp_dbh))
+        return FALSE;
+    
     if (dbis->debug >= 3) 
-        PerlIO_printf(DBILOGFP, "isc_commit_retaining succeed.\n");
+        PerlIO_printf(DBILOGFP, "isc_commit_transaction succeed.\n");
 
     return TRUE;
 }
@@ -533,10 +565,8 @@ int dbd_db_rollback(SV *dbh, imp_dbh_t *imp_dbh)
     if (ib_error_check(dbh, status))
         return FALSE;
 
-    /* start new trans */
-    isc_start_transaction(status, &(imp_dbh->tr), 1, &(imp_dbh->db),
-        imp_dbh->tpb_length, imp_dbh->tpb_buffer );
-
+    imp_dbh->tr = 0L;
+    
     if (ib_error_check(dbh, status))
         return FALSE;
 
@@ -581,7 +611,7 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
             /* AutoCommit set from 1 to 0 */
             /* AutoCommit set from 0 to 0 */
 
-            /* start a new transaction using default TPB */
+            /* start a new transaction using current TPB */
             if (!ib_start_transaction(dbh, imp_dbh, NULL, 0)) 
                 croak("Error starting default transaction\n");
                 
@@ -686,8 +716,8 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     /* init values */
     count_item = 0;
 
-	imp_sth->count_item = 0;	
-	imp_sth->fetched = -1;
+    imp_sth->count_item = 0;    
+    imp_sth->fetched = -1;
     imp_sth->done_desc = 0;
     imp_sth->in_sqlda = NULL;
     imp_sth->out_sqlda = NULL;
@@ -750,17 +780,13 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
        PerlIO_printf(DBILOGFP, 
        "dbd_st_prepare: sqldialect: %d.\n", imp_dbh->sqldialect);
 
-/* XXX add handling if AutoCommit On, where imp_dbh->tr = 0L */
-    /* AutoCommit = on */
-    if (DBIc_has(imp_dbh, DBIcf_AutoCommit)) {
-        /* start a new transaction using default TPB */
+    if (!imp_dbh->tr) { 
+        /* start a new transaction using current TPB */
         if (!ib_start_transaction(sth, imp_dbh, NULL, 0)) {
             ib_cleanup_st_prepare(imp_sth);
             return FALSE;
         }
     }
-
-/* XXX strange, fail for "" */
 
     if (dbis->debug >= 3) 
        PerlIO_printf(DBILOGFP, 
@@ -854,8 +880,8 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         break;
     }
 
-	imp_sth->count_item = count_item;
-	
+    imp_sth->count_item = count_item;
+    
     /* scan statement for '?', ':1' and/or ':foo' style placeholders    */
     /* realloc in_sqlda where needed */
     dbd_preparse(sth, imp_sth, statement);
@@ -925,6 +951,9 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
             i++, var++) 
         {
             dtype = (var->sqltype & ~1);
+            if (dbis->debug >= 3) 
+            PerlIO_printf(DBILOGFP, 
+            "dbd_st_prepare: field type: %d.\n", dtype);    
 
             /* specify time format, if needed */
 
@@ -938,6 +967,12 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
                         return FALSE;
                     }   
                     strcpy(imp_sth->ib_dateformat, "%x");
+
+    if (dbis->debug >= 3) {
+        PerlIO_printf(DBILOGFP, "ib_dateformat: %s.\n", imp_sth->ib_dateformat);
+        PerlIO_printf(DBILOGFP, "Len: %d.\n", strlen(imp_sth->ib_dateformat));
+    }
+
                 }
                 break;
             case SQL_TIMESTAMP:
@@ -984,17 +1019,16 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         }
     }
     DBIc_IMPSET_on(imp_sth);
-
     return TRUE;
 }
 
 int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
 {
     D_imp_dbh_from_sth;
-    ISC_STATUS  status[20], fetch;     
+    ISC_STATUS status[20], fetch;     
     char stmt_info[1];
     char info_buffer[20];
-    int         result = -2;    
+    int result = -2;    
     int row_count;
     
     if (dbis->debug >= 2) 
@@ -1035,8 +1069,19 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
         isc_dsql_execute(status, &(imp_dbh->tr), &(imp_sth->stmt),
         imp_dbh->sqldialect,
         imp_sth->in_sqlda->sqld > 0 ? imp_sth->in_sqlda: NULL);
+
         if (ib_error_check(sth, status)) {
             ib_cleanup_st_execute(imp_sth);
+
+			/* rollback any active transaction */
+	        if (DBIc_has(imp_dbh, DBIcf_AutoCommit) && imp_dbh->tr) {
+    	        /* rollback and close trans context */
+        	    isc_rollback_transaction(status, &(imp_dbh->tr));
+/*            	if (ib_error_check(sth, status))
+                	return FALSE;
+*/
+	        }
+
             return result;
         }
         if (dbis->debug >= 3) 
@@ -1101,31 +1146,31 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
             break;
     }
 
-	if (imp_sth->count_item) {
-	    stmt_info[0] = imp_sth->count_item; /* isc_info_sql_records; */
-    	isc_dsql_sql_info(status,
-        	&(imp_sth->stmt),
-        	sizeof (stmt_info),   stmt_info,
-        	sizeof (info_buffer), info_buffer);
+    if (imp_sth->count_item) {
+        stmt_info[0] = imp_sth->count_item; /* isc_info_sql_records; */
+        isc_dsql_sql_info(status,
+            &(imp_sth->stmt),
+            sizeof (stmt_info),   stmt_info,
+            sizeof (info_buffer), info_buffer);
 
-		/* perhaps this is a too strong exception */
-    	if (ib_error_check(sth, status)) {
-        	ib_cleanup_st_execute(imp_sth);
-        	return FALSE;
-    	}
+        /* perhaps this is a too strong exception */
+        if (ib_error_check(sth, status)) {
+            ib_cleanup_st_execute(imp_sth);
+            return FALSE;
+        }
 
-	    {
-    	    short l = (short) isc_vax_integer((char *) info_buffer + 1, 2);
-        	row_count = isc_vax_integer((char *) info_buffer + 3, l);
-    	}
+        {
+            short l = (short) isc_vax_integer((char *) info_buffer + 1, 2);
+            row_count = isc_vax_integer((char *) info_buffer + 3, l);
+        }
     }
     
     result = -1;
-	/* XXX attempt to return number of affected rows still doesn't work */
+    /* XXX attempt to return number of affected rows still doesn't work */
     if (dbis->debug >= 3) {
         PerlIO_printf(DBILOGFP, "dbd_st_execute: row count: %d.\n", row_count);
         PerlIO_printf(DBILOGFP, "dbd_st_execute: count_item: %c.\n", 
-        	imp_sth->count_item);
+            imp_sth->count_item);
     }
     return result; 
 }
@@ -1183,9 +1228,9 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
     if (dbis->debug >= 3) 
         PerlIO_printf(DBILOGFP, "fetch: %d\n", fetch);
 
-	if (imp_sth->fetched < 0) 
-		imp_sth->fetched = 0;
-		
+    if (imp_sth->fetched < 0) 
+        imp_sth->fetched = 0;
+        
     if (fetch == 100) 
     {
         /* close the cursor */
@@ -1424,19 +1469,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                 } else
                     strcpy(format_buf, imp_sth->ib_dateformat);
 #else
-    if (dbis->debug >= 3) {
-        PerlIO_printf(DBILOGFP, "ib_dateformat: %s.\n", imp_sth->ib_dateformat);
-        PerlIO_printf(DBILOGFP, "Len: %d.\n", strlen(imp_sth->ib_dateformat));
-    }
-
-                if (imp_dbh->sqldialect == 1)
-                {
-                    if (strlen(imp_sth->ib_dateformat) + 1 > 20) {
-                        do_error(sth, 1, "Buffer overflow.");
-                        return FALSE;
-                    } else
-                        strcpy(format_buf, imp_sth->ib_dateformat);
-                } else switch (dtype)
+                switch (dtype)
                 {
                     case SQL_TIMESTAMP:
                         if (strlen(imp_sth->ib_timestampformat) + 1 > 20) 
@@ -1688,7 +1721,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
 */
         }
     }
-	imp_sth->fetched += 1;
+    imp_sth->fetched += 1;
     return av;
 }
 
@@ -1754,8 +1787,12 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
 
     if (imp_sth->in_sqlda)
     {
-        int i;
+		int i;
         XSQLVAR *var = imp_sth->in_sqlda->sqlvar;
+
+        if (dbis->debug >= 3) 
+            PerlIO_printf(DBILOGFP, "dbd_st_destroy: found in_sqlda..\n");
+
         for (i=0; i < imp_sth->in_sqlda->sqld; i++, var++)
         {
             if (var->sqldata)
@@ -1881,27 +1918,27 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
         AV *av = newAV();
         result = newRV(sv_2mortal((SV*)av));
         while(--i >= 0)
-		{
-			if (imp_sth->out_sqlda->sqlvar[i].aliasname_length > 0)
-			{
-			    av_store(av, i, 
-			    	newSVpvn(imp_sth->out_sqlda->sqlvar[i].aliasname, 
-			    	imp_sth->out_sqlda->sqlvar[i].aliasname_length));
-			}
-			else
-			{
-		    	char s[20];
-		    	sprintf(s, "COLUMN%d", i);
-		    	av_store(av, i, 
-		    		newSVpvn(s, strlen(s)));
-			}
+        {
+            if (imp_sth->out_sqlda->sqlvar[i].aliasname_length > 0)
+            {
+                av_store(av, i, 
+                    newSVpvn(imp_sth->out_sqlda->sqlvar[i].aliasname, 
+                    imp_sth->out_sqlda->sqlvar[i].aliasname_length));
+            }
+            else
+            {
+                char s[20];
+                sprintf(s, "COLUMN%d", i);
+                av_store(av, i, 
+                    newSVpvn(s, strlen(s)));
+            }
 /*
             av_store(av, i,
                 newSVpvn(imp_sth->out_sqlda->sqlvar[i].sqlname, 
                 imp_sth->out_sqlda->sqlvar[i].sqlname_length)
             );
 */
-		}
+        }
     } 
     else if (kl==8 && strEQ(key, "NULLABLE")) 
     {
@@ -1961,7 +1998,6 @@ int dbd_st_STORE_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv, SV *valuesv)
                 return FALSE;
         }
     }
-
     return FALSE;
 }
 
@@ -2196,8 +2232,10 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         } else {
             memset(ivar->sqldata, ' ', ivar->sqllen);
             memcpy(ivar->sqldata, SvPV_nolen(value), len);
+/* problem on some system:
             if (dbis->debug >= 3) 
                 dump_str(ivar->sqldata, ivar->sqllen);
+*/
         }
 /* XXX Is this necessary? */
 /*      ivar->sqldata[len] = '\0'; */
@@ -2318,7 +2356,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         if ( (ivar->sqldata == (char *) NULL) &&
         ((ivar->sqldata = (char *) safemalloc(sizeof(float))) == NULL))
         {
-            fprintf(stderr, "Cannot allocate buffer for FLOAT input parameter #%d\n", i);
+            PerlIO_printf(stderr, "Cannot allocate buffer for FLOAT input parameter #%d\n", i);
             retval = FALSE;
             goto end;
         }
@@ -2526,6 +2564,11 @@ int dbd_bind_ph(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 }
 
 /* start a transaction with tpb TPB, len length */
+/* 2001-03-20, edwin - tpb and len are no longer used. 
+ * ib_start_transaction() merely depends on the current values of
+ * imp_dbh->tpb_buffer and imp_dbh->tpb_length
+ */
+   
 int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh, char *tpb, unsigned short len)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
@@ -2537,29 +2580,11 @@ int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh, char *tpb, unsigned short le
         return TRUE;
     }
     
-    if (tpb == NULL) {
-        /* setup a default TPB */
-        if ((imp_dbh->tpb_buffer = (char*)safemalloc(10 * sizeof(char))) == NULL) {
-            do_error(h, IB_ALLOC_FAIL, "Can't alloc TPB");
-            return FALSE;
-        }
-        tpb = imp_dbh->tpb_buffer;
-        *tpb++ = isc_tpb_version3;
-        *tpb++ = isc_tpb_write;
-        *tpb++ = isc_tpb_concurrency;
-        *tpb++ = isc_tpb_wait;
-        imp_dbh->tpb_length = tpb - imp_dbh->tpb_buffer;
-    } else {
-        /* TPB already allocated, as pointed by tpb */
-        imp_dbh->tpb_buffer = tpb;
-        imp_dbh->tpb_length = len;
-    }
-
     /* MUST initialized to 0, before it is used */
     imp_dbh->tr = 0L;
     
     isc_start_transaction(status, &(imp_dbh->tr), 1, &(imp_dbh->db),
-       imp_dbh->tpb_length, imp_dbh->tpb_buffer );
+       imp_dbh->tpb_length, imp_dbh->tpb_buffer);
 
     if (ib_error_check(h, status))
         return FALSE;
@@ -2598,15 +2623,16 @@ int dbd_st_blob_read(SV *sth, imp_sth_t *imp_sth, int field,
 }
 
 int dbd_st_rows(SV* sth, imp_sth_t* imp_sth) {
-    /* spot common mistake of checking $h->rows just after ->execut
+/* spot common mistake of checking $h->rows just after ->execut
     if (imp_sth->fetched < 0 
-    && DBIc_WARN(imp_sth)	
+    && DBIc_WARN(imp_sth)   
     ) {
-	warn("$h->rows count is incomplete before all rows fetched.\n");
+    warn("$h->rows count is incomplete before all rows fetched.\n");
     }
 */
-	if (imp_sth->type == isc_info_sql_stmt_select)  
-	    return imp_sth->fetched;
-	else 
-		return -1; /* unknown */
+    if (imp_sth->type == isc_info_sql_stmt_select)  
+        return imp_sth->fetched;
+    else 
+        return -1; /* unknown */
 }
+

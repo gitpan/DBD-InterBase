@@ -1,7 +1,7 @@
 
-#   $Id: InterBase.pm,v 1.10 2000/08/29 20:03:45 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.18 2001/03/24 14:04:10 edpratomo Exp $
 #
-#   Copyright (c) 1999,2000 Edwin Pratomo
+#   Copyright (c) 1999-2001 Edwin Pratomo
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -20,8 +20,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-@EXPORT = qw();
-$VERSION = '0.21';
+$VERSION = '0.25.0';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -136,7 +135,8 @@ sub do {
         $sth->execute(@params) or return undef;
         $rows = $sth->rows;
     } else {
-        $rows = DBD::InterBase::db::_do($dbh, $statement, $attr);
+        $rows = DBD::InterBase::db::_do($dbh, $statement, $attr)
+            or return undef;
     }       
     ($rows == 0) ? "0E0" : $rows;
 }
@@ -269,15 +269,12 @@ sub table_info
 
 sub ping {
     my($dbh) = @_;
-    my $ret = 0;
 
-    local $dbh->{RaiseError} = 0;
-#    local $SIG{__WARN__} = sub { return (0); };
-    my $sth = $dbh->prepare('SELECT 1 FROM RDB$DATABASE');
-    $ret = $sth && ($sth->execute);
-    $sth->finish;
+    local $SIG{__WARN__} = sub { } if $dbh->{PrintError};
+    local $dbh->{RaiseError} = 0 if $dbh->{RaiseError};
+    my $ret = DBD::InterBase::db::_ping($dbh);
 
-    return ($@) ? 0 : $ret;
+    return $ret;
 }
 
 1;
@@ -431,7 +428,8 @@ Implemented by DBI, no driver-specific impact.
 
 =item B<func>
 
-There are no driver specific methods to be called from func() method.
+See B<Transactions> section for information about invoking C<set_tx_param()>
+from func() method.
 
 =back
 
@@ -794,35 +792,62 @@ In this mode, any change to the database becomes valid immediately. Any
 commit() or rollback() will be rejected. 
 
 If AutoCommit is switched-off, immediately a transaction will be started.
-A subsequent commit() will do a "soft commit", which preserve the
-transaction context for next reuse. A rollback() will rollback and close the
-active transaction, then implicitly start a new transaction. 
-A disconnect will issue a rollback. 
+A rollback() will rollback and close the active transaction, then implicitly 
+start a new transaction. A disconnect will issue a rollback. 
 
 InterBase provides fine control over transaction behavior, where users can
 specify the access mode, the isolation level, the lock resolution, and the 
-table reservation (for a specified table). Unfortunately the current version 
-of the driver hasn't supported any way to do this. Even SET TRANSACTION 
-statement won't work. A transaction always created using these default 
-parameter values:
+table reservation (for a specified table). For this purpose,
+C<set_tx_param()> database handle method is available. Please notice that
+this private method is new and considered B<experimental> at this release.
+Use with caution!
+
+Upon a successful C<connect()>, these default parameter values will be used
+for every SQL operation:
 
     Access mode:        read/write
     Isolation level:    concurrency
     Lock resolution:    wait
 
-Hopefully transaction control will be fully supported by the next release
-of this driver.
+Any of the above value can be changed using C<set_tx_param()>.
+
+=over 4
+
+=item B<set_tx_param> 
+
+ $dbh->func( 
+	-access_mode     => 'read_write',
+	-isolation_level => 'read_committed',
+	-lock_resolution => 'wait',
+	'set_tx_param'
+ );
+
+Valid value for C<-access_mode> is C<read_write>, or C<read_only>. 
+Valid value for C<-lock_resolution> is C<wait>, or C<no_wait>.
+C<-isolation_level> may be: C<read_committed>, C<snapshot>,
+C<snapshot_table_stability>. If C<read_committed> is to be used with
+C<record_version> or C<no_record_version>, then they should be inside an
+anonymous array:
+
+ $dbh->func( 
+	-isolation_level => ['read_committed', 'record_version']
+    'set_tx_param'
+ );
+
+Currently, table reservation is not yet supported.
+
+=back
 
 =head2 Unsupported SQL Statements
 
-Beside SET TRANSACTION statement mentioned in the B<Transaction> section, 
-there are some other SQL statements which can't be used, because they are
-unavailable within the InterBase DSQL API. But this shouldn't be a problem,
-because their functionality are already provided by the DBI methods.
-
-The following list contains those SQL statements:
+Here is a list of SQL statements which can't be used. But this shouldn't be a 
+problem, because their functionality are already provided by the DBI methods.
 
 =over 4
+
+=item * SET TRANSACTION
+
+Use C<$dbh->func(..., 'set_tx_param')> instead.
 
 =item * DESCRIBE
 
@@ -876,6 +901,10 @@ Server: InterBase 6.0 SS and Classic for Linux, InterBase 6.0 for Windows.
 
 Partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
 DBD::mysql, and Edmund Mergl's DBD::Pg.
+
+=head1 BUGS
+
+Known problem with BLOB fields on Win32 platform.
 
 =head1 SEE ALSO
 

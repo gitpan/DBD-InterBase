@@ -28,21 +28,11 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.21 available in CPAN.
-
-=head1 Installation
-
-=head2 How to run the make test?
-
-After compiling, run the t/create.sql before running 'make test' to create 
-the required test database:
-
- isql -i t/create.sql
+C<DBD::InterBase> version 0.25 available in CPAN.
 
 =head1 SQL Operations
 
-=head2 Why do some operations performing positioned update and delete
-fail when AutoCommit is on? 
+=head2 Why do some operations performing positioned update and delete fail when AutoCommit is on? 
 
 The following code snippet fails:
 
@@ -74,8 +64,7 @@ AutoCommit on, you can put the snippet within a block:
      $dbh->commit;
  }
 
-=head2 Why do placeholders fail to bind, generating unknown datatype error
-message?
+=head2 Why do placeholders fail to bind, generating unknown datatype error message?
 
 You can't bind a field name. The following example will fail:
 
@@ -166,8 +155,7 @@ Then, pass it to prepare() method.
 
  $res = $dbh->selectall_arrayref($stmt, $attr);
 
-=head2 Can I set the date/time formatting attributes between prepare and
-fetch?
+=head2 Can I set the date/time formatting attributes between prepare and fetch?
 
 No. C<ib_dateformat>, C<ib_timeformat>, and C<ib_timestampformat> can only
 be set during $sth->prepare. If this is a problem to you, let me know, and
@@ -187,8 +175,7 @@ returns -1, because I don't know how to get the number of affected rows :-}
 
 =head1 Sources for Help
 
-=head2 I can't find the answer for my question here, where should I direct
-my question?
+=head2 I can't find the answer for my question here, where should I direct my question?
 
 For questions regarding InterBase itself, you can join the InterBase mailing
 list at http://www.mers.com/, or if it is not enough, I believe there are

@@ -19,7 +19,7 @@ $test_password = '';
 #   Include lib.pl
 #
 require DBI;
-#DBI->trace(4, "trace.txt");
+DBI->trace(4, "trace.txt");
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl") {
     do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";

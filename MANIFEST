@@ -1,5 +1,4 @@
 README
-TODO
 Changes
 dbdimp.h
 dbdimp.c
@@ -29,4 +28,3 @@ t/ak-dbd.t      Miscellaneous DBI driver t
 t/dbdadmin.t    Check $dbh->ping and 'admin' methods
 t/InterBase.dbtest  Core of testing InterBase database access
 t/InterBase.mtest   Core of testing InterBase module
-t/create.sql    SQL script for creating database
