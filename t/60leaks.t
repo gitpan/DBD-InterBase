@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 60leaks.t,v 1.4 2002/09/09 08:08:09 edpratomo Exp $
+#   $Id: 60leaks.t,v 1.6 2003/05/20 02:43:57 edpratomo Exp $
 #
 #   This is a memory leak test.
 #
@@ -21,8 +21,7 @@ BEGIN {
 }
 
 
-print "# Skipping test on this platform\n" and exit 0 
-	unless ($^O eq 'linux' && $ENV{MEMORY_TEST});
+print "1..0 # Skipped: Long running memory leak test\n" and exit 0 unless ($^O eq 'linux' && $ENV{MEMORY_TEST});
 
 #
 #   Include lib.pl

@@ -1,7 +1,7 @@
 /*
-   $Id: InterBase.xs,v 1.40 2002/08/21 19:53:21 danielritz Exp $
+   $Id: InterBase.xs,v 1.41 2003/05/20 10:41:27 edpratomo Exp $
 
-   Copyright (c) 1999-2002  Edwin Pratomo
+   Copyright (c) 1999-2003  Edwin Pratomo
    Portions Copyright (c) 2001-2002  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
@@ -175,18 +175,20 @@ int
 _ping(dbh)
     SV *    dbh
     CODE:
+{
     int ret;
     ret = dbd_db_ping(dbh);
     if (ret == 0)
         XST_mUNDEF(0);
     else
         XST_mIV(0, ret);
+}
 
 void
 ib_set_tx_param(dbh, ...)
     SV *dbh
-	ALIAS:
-	set_tx_param = 1
+    ALIAS:
+    set_tx_param = 1
     PREINIT:
     STRLEN len;
     char   *tx_key, *tx_val, *tpb, *tmp_tpb;
@@ -200,6 +202,7 @@ ib_set_tx_param(dbh, ...)
     HE     *he;
 
     CODE:
+{
     D_imp_dbh(dbh);
 
     /* if no params or first parameter = 0 or undef -> reset TPB to NULL */
@@ -467,7 +470,7 @@ ib_set_tx_param(dbh, ...)
         imp_dbh->sth_ddl++;
         ib_commit_transaction(dbh, imp_dbh);
     }
-
+}
 #*******************************************************************************
 
 # only for use within database_info!
@@ -495,6 +498,7 @@ ib_database_info(dbh, ...)
     AV    *av;
     ISC_STATUS status[ISC_STATUS_LENGTH];
     CODE:
+{
     D_imp_dbh(dbh);
 
     /* process input params, count max. result buffer length */
@@ -779,7 +783,7 @@ ib_database_info(dbh, ...)
 
     /* don't leak */
     safefree(res_buf);
-
+}
     OUTPUT:
     RETVAL
 
@@ -799,6 +803,7 @@ ib_init_event(dbh, ...)
     int i;
     D_imp_dbh(dbh);
     CODE:
+{
     unsigned short cnt = items - 1;
 
     DBI_TRACE(2, (DBILOGFP, "Entering init_event(), %d items..\n", cnt));
@@ -829,8 +834,15 @@ ib_init_event(dbh, ...)
 
         for (i = 0; i < MAX_EVENTS; i++)
         {
-            if (i < cnt)
+            if (i < cnt) {
+                /* dangerous! 
                 *(RETVAL->names + i) = SvPV_nolen(ST(i + 1));
+                */
+                RETVAL->names[i] = (char*) safemalloc(sizeof(char) * (SvCUR(ST(i + 1)) + 1));
+                if (RETVAL->names[i] == NULL) 
+                    croak("Unable to allocate memory");
+                strcpy(RETVAL->names[i], SvPV_nolen(ST(i + 1)));
+            }
             else
                 *(RETVAL->names + i) = NULL;
         }
@@ -859,7 +871,7 @@ ib_init_event(dbh, ...)
         croak("Names of the events in interest are not specified");
 
     DBI_TRACE(2, (DBILOGFP, "Leaving init_event()\n"));
-
+}
     OUTPUT:
     RETVAL
 
@@ -873,7 +885,7 @@ ib_register_callback(dbh, ev, perl_cb)
     ISC_STATUS status[ISC_STATUS_LENGTH];
     D_imp_dbh(dbh);
     CODE:
-
+{
     DBI_TRACE(2, (DBILOGFP, "Entering register_callback()..\n"));
 
     /* save the perl callback function */
@@ -895,7 +907,7 @@ ib_register_callback(dbh, ev, perl_cb)
         RETVAL = 1;
 
     DBI_TRACE(2, (DBILOGFP, "Leaving register_callback(): %d\n", RETVAL));
-
+}
     OUTPUT:
     RETVAL
 
@@ -909,6 +921,7 @@ ib_reinit_event(dbh, ev)
     SV  **svp;
     ISC_STATUS status[ISC_STATUS_LENGTH];
     CODE:
+{
     DBI_TRACE(2, (DBILOGFP, "reinit_event() - reinit value: %d.\n",
                   (int)ev->reinit));
 
@@ -936,6 +949,7 @@ ib_reinit_event(dbh, ev)
         ev->reinit = 1;
 
     ev->cb_called = 0;
+}
     OUTPUT:
     RETVAL
     CLEANUP:
@@ -950,6 +964,7 @@ ib_cancel_callback(dbh, ev)
     ISC_STATUS status[ISC_STATUS_LENGTH];
     D_imp_dbh(dbh);
     CODE:
+{
     DBI_TRACE(2, (DBILOGFP, "Entering cancel_callback()..\n"));
 
     if (ev->perl_cb)
@@ -962,7 +977,7 @@ ib_cancel_callback(dbh, ev)
     }
     else
         RETVAL = 1;
-
+}
     OUTPUT:
     RETVAL
 
@@ -975,7 +990,7 @@ ib_wait_event(dbh, ev)
     ISC_STATUS status[ISC_STATUS_LENGTH];
     D_imp_dbh(dbh);
     CODE:
-
+{
     isc_wait_for_event(status, &(imp_dbh->db), ev->epb_length, ev->event_buffer,
                        ev->result_buffer);
 
@@ -986,7 +1001,7 @@ ib_wait_event(dbh, ev)
     }
     else
         RETVAL = 1;
-
+}
     OUTPUT:
     RETVAL
 
@@ -995,35 +1010,32 @@ MODULE = DBD::InterBase     PACKAGE = DBD::InterBase::Event
 PROTOTYPES: DISABLE
 
 void
-DESTROY(self)
-    IB_EVENT *self
+DESTROY(evh)
+    IB_EVENT *evh
     PREINIT:
     int i;
     ISC_STATUS status[ISC_STATUS_LENGTH];
     CODE:
+{
     DBI_TRACE(2, (DBILOGFP, "Entering DBD::InterBase::Event destructor..\n"));
 
-    for (i = 0; i < MAX_EVENTS; i++)
-        if (*(self->names + i))
-            safefree(*(self->names + i));
-
-    if (self->names)
-        safefree(self->names);
-
-    if (self->perl_cb)
-        isc_cancel_events(status, &(self->dbh->db), &(self->id));
-
-    if (self->event_buffer)
-        isc_free(self->event_buffer);
-
-    if (self->result_buffer)
-        isc_free(self->result_buffer);
-
+    for (i = 0; i < evh->num; i++)
+        if (*(evh->names + i))
+            safefree(*(evh->names + i));
+    if (evh->names)
+        safefree(evh->names);
+    if (evh->perl_cb)
+        isc_cancel_events(status, &(evh->dbh->db), &(evh->id));
+    if (evh->event_buffer)
+        isc_free(evh->event_buffer);
+    if (evh->result_buffer)
+        isc_free(evh->result_buffer);
+}
 
 int
-callback_called(self)
-    IB_EVENT *self
+callback_called(evh)
+    IB_EVENT *evh
     CODE:
-    RETVAL = self->cb_called;
+    RETVAL = evh->cb_called;
     OUTPUT:
     RETVAL

@@ -1,7 +1,7 @@
-### $Id: FAQ.pm,v 1.10 2002/04/04 10:38:32 edpratomo Exp $
+### $Id: FAQ.pm,v 1.11 2003/05/21 06:19:42 edpratomo Exp $
 ### DBD::InterBase Frequently Asked Questions POD
 ### 
-### This document is Copyright (c)2000-2002 Edwin Pratomo. All rights reserved.
+### This document is Copyright (c)2000-2003 Edwin Pratomo. All rights reserved.
 ### Permission to distribute this document, in full or in part, via email,
 ### Usenet, ftp archives or http is granted providing that no charges are involved,
 ### reasonable attempt is made to use the most current version and all credits
@@ -28,7 +28,7 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.30 available on SourceForge.
+C<DBD::InterBase> version 0.41 available on SourceForge.
 
 =head1 SQL Operations
 
@@ -245,11 +245,6 @@ username, and let me know what areas you are interested in.
 
 SourceForge.net project page: http://sourceforge.net/projects/dbi-interbase/
 
-=head2 Is there a mailing list for DBD::InterBase?
-
-Please join dbi-interbase-devel mailing list at 
-http://lists.sourceforge.net/mailman/listinfo/dbi-interbase-devel/
-
 =head2 Where can I get the latest release of DBD::InterBase ?
 
 http://dbi.interbase.or.id/ (stable and development release), and 
@@ -257,7 +252,7 @@ http://www.cpan.org/modules/by-module/DBD/ (stable release only).
 
 =head1 AUTHORS AND COPYRIGHT
 
-Copyright (C) 2000-2002, Edwin Pratomo I<edpratomo@cpan.org>. Daniel Ritz
+Copyright (C) 2000-2003, Edwin Pratomo I<edpratomo@cpan.org>. Daniel Ritz
 I<daniel.ritz@gmx.ch> also writes necessary updates.
 
 Michael Samanov I<samanov@yahoo.com> contributed some important correction.

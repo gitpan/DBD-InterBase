@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.45 2002/08/12 16:04:26 danielritz Exp $
+   $Id: dbdimp.h,v 1.46 2003/03/05 18:13:52 danielritz Exp $
 
    Copyright (c) 1999-2002  Edwin Pratomo
    Portions Copyright (c) 2001-2002  Daniel Ritz
@@ -248,6 +248,7 @@ typedef struct vary
 
 /* These defines avoid name clashes for multiple statically linked DBD's */
 #define dbd_init            ib_init
+#define dbd_discon_all      ib_discon_all
 #define dbd_db_login        ib_db_login
 #define dbd_db_do           ib_db_do
 #define dbd_db_commit       ib_db_commit
