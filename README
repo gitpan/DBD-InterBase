@@ -1,0 +1,134 @@
+NAME
+    DBD::InterBase - DBI driver for InterBase RDBMS server
+
+SYNOPSIS
+      use DBI;
+      
+      $dbpath = '/home/edwin/perl_example.gdb';
+      $dsn = "DBI:InterBase:database=$dbpath;host=puskom-4";
+
+      $dbh = DBI->connect($dsn, '', '', {AutoCommit => 0}) 
+        or die "$DBI::errstr";
+
+      $dbh = DBI->connect($dsn, '', '', {RaiseError => 1}) 
+        or die "$DBI::errstr";
+
+      $sth = $dbh->prepare("select * from SIMPLE") or die $dbh->errstr;
+      $sth->execute;
+
+      while (@row = $sth->fetchrow_array))
+      {
+        print @row, "\n";
+      }
+
+      $dbh->commit or warn $dbh->errstr;
+      $dbh->disconnect or warn $dbh->errstr;  
+
+    For more examples, see eg/ directory.
+
+DESCRIPTION
+    This DBI driver currently is a wrapper around IBPerl, written in
+    pure perl. It is based on the DBI 1.13 specification dan IBPerl
+    0.7. This module should obsoletes the DBIx::IB.
+
+    Connecting with InterBase-specific optional parameters
+
+    InterBase allows you to connect with specifiying Role, Protocol,
+    Cache, and Charset. These parameters can be passed to InterBase
+    via $dsn of DBI connect method. Eg:
+
+      $dsn = 'dbi:InterBase:database=/path/to/data.gdb;charset=ISO8859_1';
+
+PREREQUISITE
+    * InterBase client
+      Available at http://www.interbase.com/,
+
+    * IBPerl 0.7, by Bill Karwin
+      Don't worry, it is included in this distribution.
+
+INSTALLATION
+    Run:
+
+      # perl Makefile.PL
+
+    Here you will be prompted with some questions due to the
+    database that will be used during 'make test'.
+
+      # make
+      # make test (optional)
+
+    The database you specify when running Makefile.PL should has
+    been existed before running 'make test', otherwise you will get
+    'Invalid DBI handle -1' error message.
+
+      # make install
+
+WARNING
+    InterBase specific behaviour:
+
+    * $sth->{NAME} available after the first fetch
+    * $sth->{NUM_OF_FIELDS} available after the first fetch
+    * $dbh->do() doesn't return number of records affected
+    * $sth->execute() doesn't return number of records
+TESTED PLATFORMS
+    This module has been tested on Linux (2.0.33, 2.0.34), IBPerl
+    0.7, Perl 5.004_04, to access InterBase 4.0 for Linux, and
+    InterBase 5.5 for NT. It has also been used under mod_perl and
+    Apache::DBI with no problems reported (yet).
+
+KNOWN BUGS
+    This sequence won't work:
+
+      $dbh->do($stmt); #any statement on table TBL
+      $dbh->commit;
+      $dbh->do("drop table TBL");
+
+    Workaround: Change the commit with disconnect, and then connect
+    again. This bug seems to occurs at IBPerl level. Try some
+    examples in eg/ibperl directory.
+
+BUG REPORTS
+    Please send any bug report to dbi-users mailing list
+    (http://www.isc.org/dbi-lists.html) Any bug report should be
+    accompanied with the script that got the problem, and the output
+    of DBI trace method.
+
+HISTORY
+    Version 0.021, September 19, 1999
+
+    Separator and DateFormat options works for prepare() and do().
+    bind_param() now works. One more fix to AutoCommit behaviour.
+
+    Version 0.02, July 31, 1999
+
+    Alpha code. Major enhancement from the previous pre-alpha code.
+    Previous known problems have been fixed. AutoCommit attribute
+    works as expected.
+
+    Version 0.01, July 23, 1999
+
+    Pre-alpha code. An almost complete rewrite of DBIx::IB in pure
+    perl. Problems encountered during handles destruction phase.
+
+    DBIx::IB Version 0.01, July 22, 1999
+
+    DBIx::IB, a DBI emulation layer for IBPerl is publicly
+    announced.
+
+TODO
+    * Rigorous test under mod_perl and Apache::DBI
+    * An xs version should be much powerful, and simplify the installation 
+    process.
+ACKNOWLEDGEMENTS
+    Bill Karwin - author of IBPerl, Tim Bunce - author of DBI.
+
+AUTHOR
+    Copyright (c) 1999 Edwin Pratomo <ed.pratomo@computer.org>.
+
+    All rights reserved. This is a free code, available as-is; you
+    can redistribute it and/or modify it under the same terms as
+    Perl itself.
+
+SEE ALSO
+    DBI(3), IBPerl(1).
+
