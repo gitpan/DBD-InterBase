@@ -1,10 +1,61 @@
 Revision history for Perl extension DBD::InterBase.
 
-$Id: Changes,v 1.14 2001/08/01 01:23:35 danielritz Exp $
+$Id: Changes,v 1.22 2002/04/05 03:32:05 edpratomo Exp $
 
+April 5, 2002
+* Switching AutoCommit attribute now also affects active softcommit flags.
+
+April 4, 2002
+* Added ib_softcommit attribute, isc_commit_retaining now needs to be enabled
+  explicitly by users. (Daniel and I).
+* Updated t/40cursoron.t, t/70nestedon.t to use ib_softcommit
+* Makefile.PL code indented properly, now load dbd_dbi_arch_dir() only once, 
+  now prompts with directory name, `make clean` cleans trace.txt
+* Updated documentation in InterBase.pm and FAQ.pm
+* Daniel added set_tx_param() with no param which now resets TPB.
+* Changed the semantic of -reserving in set_tx_param(), now uses hashref instead of arrayref.
+* Fixed warnings when compiled with DBI >= 1.20
+* Ilya addressed bug #429820 and some bug in sth_ddl.
+
+January 29, 2002
+* Fixed wrong value stored through bind param if numeric(*, 0)
+* Added t/41numeric.t for exhaustive test on INT64 type.
+* Updated version number in FAQ (danielritz)
+* Change acceptable oldest perl version in InterBase.pm
+
+January 28, 2002
+* Fixed incorrect precision number in INT64 values and now locale-aware.
+* changed version number in InterBase.pm
+* Applied a patch to type_info_all by Christian Lademann
+* Removed trailing precision if INT64 value is an integer.
+
+December 2001, by danielritz
+* no longer start a default transaction on init
+* set_tx_param in AutoCommit mode commits any changes, starts a new
+  transcation using updated TPB; all open statement handles are closed!
+* include Pavel Zheltouhov <pavlo@tvrn.ru> patch for table reservation
+* only allow to set each param once in set_tx_param
+* use SvPV_nolen where no len is required in set_tx_param
+* fix ChopBlanks on Sun Sparc
+* close all open statment handles on rollback
+* close all open statements before commit (AutoCommit = 0)
+* close all open statements before commit if sth_dll > 0 (AutoCommit = 1)
+* manage statement handles with double linked list
+* always set imp_dbh->tr = 0L after isc_commit_transcation or isc_rollback_transaction
+* ib_commit_transaction uses isc_commit_retaining in AutoCommit mode
+* fix possible buffer overflow in dbd_db_login6
+* don't waste some bytes of memory (dbd_db_login6)
+* fix $dbh->table_info didn't show views correctly
+* big update in coding style
+* cleanups
+
+November 2001, by danielritz
+* handle numberic bind params with values such as .7 passed as string
+* int64 support for microsoft visual c++
+* fix: numeric with bind and negative values stored wrong
 
 August 1 2001
-* fix set_txt_param crashes perl, by danielritz
+* fix set_tx_param crashes perl, by danielritz
 * always rollback open transactions on disconnect (see source), by danielritz
 
 July 24 2001
@@ -53,13 +104,13 @@ January 22 2001
 
 Sept 27 2000
 * Replace isc_commit_retaining() with isc_commit_transaction. Flemming
-suspected this as the source of some deadlock problem.
+  suspected this as the source of some deadlock problem.
 * Fixed dbd_db_rollback(). Now no longer starts a new transaction after
-rollback.
+  rollback.
 
 Aug 30 2000
 * Patch to DBI.pm of DBI-1.14, fixes a subtle bug of fetchall_arrayref().
-The patched DBI allows DBD::InterBase to work with DBIx::Tree 0.91. Cool!
+  The patched DBI allows DBD::InterBase to work with DBIx::Tree 0.91. Cool!
 * Moving FAQ.pm to InterBase/FAQ.pm
 
 Aug 28 2000
@@ -67,17 +118,17 @@ Aug 28 2000
 
 Aug 22 2000
 * Fixed _OdbcParse() in InterBase.pm, to connect to remote host incl.
-Windows.
+  Windows.
 
 Aug 19 2000
 * $sth->rows() now returns the number of fetched rows, for SELECT, otherwise
-returns - 1 (unknown).
+  returns - 1 (unknown).
 
 Aug 18 2000
 * starting a transaction (automatic or not) is more robust, now it reuses an
-active transaction handle, instead of overridding it with a new one, leaving
-the previous one "immortal" (because the previous transaction handle is no
-longer kept!)
+  active transaction handle, instead of overridding it with a new one, leaving
+  the previous one "immortal" (because the previous transaction handle is no
+  longer kept!)
 
 Aug 16 2000
 * Fix $dbh->do() method for usage with placeholders.
@@ -86,7 +137,7 @@ Aug 16 2000
 
 Aug 13 2000
 * Added datatype values conversion routine between InterBase internal
-values and DBI/ISO/ANSI/ODBC values
+  values and DBI/ISO/ANSI/ODBC values
 * Fixed tables() method, now correctly removes the trailing blank spaces
 * Tested to 100% compliant with DBIx::Recordset (0.21)!
 

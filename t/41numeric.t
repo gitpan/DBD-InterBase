@@ -1,8 +1,8 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40alltypes.t,v 1.6 2002/01/28 14:09:56 danielritz Exp $
+#   $Id: 41numeric.t,v 1.1 2002/01/29 11:18:54 edpratomo Exp $
 #
-#   This is a test for all data types handling.
+#   This is a test for INT64 type.
 #
 
 
@@ -14,7 +14,7 @@ $test_user = '';
 $test_password = '';
 
 # hmm this must be known prior to test. ugly...
-my $num_of_fields = 16;
+my $num_of_tests = 15;
 
 #
 #   Include lib.pl
@@ -22,7 +22,7 @@ my $num_of_fields = 16;
 use DBI;
 use vars qw($verbose);
 
-#DBI->trace(5, "40alltypes.txt");
+#DBI->trace(2, "41numeric.txt");
 
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl") {
@@ -44,24 +44,19 @@ sub ServerError() {
     exit 10;
 }
 
-my @is_match = (
-    sub { shift->[0]->[0] == 30000},
-    sub { shift->[0]->[1] == 1000},
-    sub { shift->[0]->[2] eq 'Edwin        '},
-    sub { shift->[0]->[3] eq 'Edwin Pratomo       '},
-    sub { shift->[0]->[4] eq 'A string'},
-    sub { shift->[0]->[5] == 5000},
-    sub { shift->[0]->[6] eq '1.20000004768372'},
-    sub { shift->[0]->[7] == 1.44},
-    sub { shift->[0]->[8] =~ /^\d\d-\d\d-\d{4} \d\d:\d\d$/},
-    sub { shift->[0]->[9] =~ /^\d\d-\d\d-\d{4}$/},
-    sub { shift->[0]->[10] =~ /^\d\d:\d\d$/},
-    sub { shift->[0]->[11] == 32.71},
-    sub { shift->[0]->[12] == -32.71},
-    sub { shift->[0]->[13] == 123456.79},
-    sub { shift->[0]->[14] == -123456.79},
-    sub { shift->[0]->[15] eq '86753090000.868'},
+# expected fetched values
+my @correct = (
+    [ 123456.79, 86753090000.868, 11 ],
+    [ -123456.79, -86753090000.868, -11],
+    [ 123456.001, 80.080, 10],
+    [ -123456.001, -80.080, 0],
+    [ 10.9, 10.9, 11],
 );
+
+sub is_match {
+    my ($result, $row, $fieldno) = @_;
+    $result->[$row]->[$fieldno] == $correct[$row]->[$fieldno];
+}
 
 #
 #   Main loop; leave this untouched, put tests after creating
@@ -86,22 +81,9 @@ while (Testing()) {
     my $table = 'builtin';
     my $def =<<"DEF";
 CREATE TABLE $table (
-    INTEGER_    INTEGER,
-    SMALLINT_   SMALLINT,
-    CHAR13_     CHAR(13),
-    CHAR20_     CHAR(20),
-    VARCHAR13_  VARCHAR(13),
-    DECIMAL_    DECIMAL,
-    FLOAT_      FLOAT,
-    DOUBLE_     DOUBLE PRECISION,
-    A_TIMESTAMP  TIMESTAMP,
-    A_DATE       DATE,
-    A_TIME       TIME,
-    NUMERIC_AS_SMALLINT  NUMERIC(4,3),
-    NUMERIC_AS_SMALLINT2 NUMERIC(4,3),
-    NUMERIC_AS_INTEGER   NUMERIC(9,3),
-    NUMERIC_AS_INTEGER2  NUMERIC(9,3),
-    A_SIXTYFOUR  NUMERIC(18,3)
+    NUMERIC_AS_INTEGER NUMERIC(9,3),
+    NUMERIC_THREE_DIGITS  NUMERIC(18,3),
+    NUMERIC_NO_DIGITS NUMERIC(10,0)
 )
 DEF
 
@@ -111,52 +93,52 @@ DEF
     my $stmt =<<"END_OF_QUERY";
 INSERT INTO $table
     (
-    INTEGER_,
-    SMALLINT_,
-    CHAR13_,
-    CHAR20_,
-    VARCHAR13_,
-    DECIMAL_,
-    FLOAT_,
-    DOUBLE_,
-    A_TIMESTAMP,
-    A_DATE,
-    A_TIME,
-    NUMERIC_AS_SMALLINT,
-    NUMERIC_AS_SMALLINT2,
     NUMERIC_AS_INTEGER,
-    NUMERIC_AS_INTEGER2,
-    A_SIXTYFOUR
+    NUMERIC_THREE_DIGITS,
+    NUMERIC_NO_DIGITS
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?)
 END_OF_QUERY
 
     Test($state or $cursor = $dbh->prepare($stmt))
        or DbiError($dbh->err, $dbh->errstr);
 
+    # insert positive numbers
     Test($state or $cursor->execute(
-    30000,
-    1000,
-    'Edwin',
-    'Edwin Pratomo',
-    'A string',
-    5000,
-    1.2,
-    1.44,
-    'TOMORROW',
-    'NOW',
-    32.71,
-    -32.71,
     123456.7895,
-    -123456.7895,
-    86753090000.8675309)
+    86753090000.8675309,
+    10.9)
     ) or DbiError($cursor->err, $cursor->errstr);
 
-    Test($state or $cursor = $dbh->prepare("SELECT * FROM $table", {
-        ib_timestampformat => '%m-%d-%Y %H:%M',
-        ib_dateformat => '%m-%d-%Y',
-        ib_timeformat => '%H:%M',
-    })) or DbiError($dbh->err, $dbh->errstr);
+    # insert negative numbers
+    Test($state or $cursor->execute(
+    -123456.7895,
+    -86753090000.8675309,
+    -10.9)
+    ) or DbiError($cursor->err, $cursor->errstr);
+
+    # insert with some variations in the precision part
+    Test($state or $cursor->execute(
+    123456.001,
+    80.080,
+    10.0)
+    ) or DbiError($cursor->err, $cursor->errstr);
+
+    Test($state or $cursor->execute(
+    -123456.001,
+    -80.080,
+    -0.0)
+    ) or DbiError($cursor->err, $cursor->errstr);
+
+    Test($state or $cursor->execute(
+    10.9,
+    10.9,
+    10.9)
+    ) or DbiError($cursor->err, $cursor->errstr);
+
+    # select..
+    Test($state or $cursor = $dbh->prepare("SELECT * FROM $table")
+    ) or DbiError($dbh->err, $dbh->errstr);
 
     Test($state or $cursor->execute)
         or DbiError($cursor->err, $cursor->errstr);
@@ -167,14 +149,16 @@ END_OF_QUERY
     if (!$state) {
         my ($types, $names, $fields) = @{$cursor}{TYPE, NAME, NUM_OF_FIELDS};
 
-        for (my $i = 0; $i < $fields; $i++) {
-            Test($state or ( $is_match[$i]->($res) ))
-                or DbiError(undef,
-                "wrong SELECT result for field $names->[$i]: $res->[0]->[$i]");
+        for (my $i = 0; $i < @$res; $i++) {
+            for (my $j = 0; $j < $fields; $j++) {
+                Test($state or ( is_match($res, $i, $j) ))
+                    or DbiError(undef,
+                    "wrong SELECT result for row $i, field $names->[$j]: '$res->[$i]->[$j], expected: $correct[$i]->[$j]'");
+            }
         }
 
     } else {
-        for (1..$num_of_fields) { Test($state) }
+        for (1..$num_of_tests) { Test($state) }
     }
 
     #

@@ -1,7 +1,7 @@
 /*
-   $Id: dbdimp.h,v 1.17 2001/06/07 11:44:33 edpratomo Exp $
+   $Id: dbdimp.h,v 1.25 2002/04/04 09:50:16 edpratomo Exp $
 
-   Copyright (c) 1999-2001  Edwin Pratomo
+   Copyright (c) 1999-2002  Edwin Pratomo
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -11,6 +11,21 @@
 */
 
 #include <DBIXS.h>              /* installed by the DBI module  */
+
+/* make it compile with DBI < 1.20 */
+#ifndef SQL_TYPE_DATE
+#  define SQL_TYPE_DATE    91
+#endif
+#ifndef SQL_TYPE_TIME
+#  define SQL_TYPE_TIME    92
+#endif
+#ifndef SQL_BLOB
+#  define SQL_BLOB         30
+#endif
+#ifndef SQL_ARRAY
+#  define SQL_ARRAY        50
+#endif
+
 
 static const int DBI_SQL_CHAR       = SQL_CHAR;
 static const int DBI_SQL_NUMERIC    = SQL_NUMERIC;
@@ -24,6 +39,10 @@ static const int DBI_SQL_DATE       = SQL_DATE;
 static const int DBI_SQL_TIME       = SQL_TIME;
 static const int DBI_SQL_TIMESTAMP  = SQL_TIMESTAMP;
 static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
+static const int DBI_SQL_TYPE_TIME  = SQL_TYPE_TIME;
+static const int DBI_SQL_TYPE_DATE  = SQL_TYPE_DATE;
+static const int DBI_SQL_ARRAY      = SQL_ARRAY;
+static const int DBI_SQL_BLOB       = SQL_BLOB;
 
 /* conflicts */
 
@@ -39,27 +58,31 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 #undef  SQL_TIME
 #undef  SQL_TIMESTAMP
 #undef  SQL_VARCHAR
+#undef  SQL_TYPE_TIME
+#undef  SQL_TYPE_DATE
+#undef  SQL_ARRAY
+#undef  SQL_BLOB
 
 #include <ibase.h>
 
 /* defines */
 
-#define IB_ALLOC_FAIL   2   
+#define IB_ALLOC_FAIL   2
 #define IB_FETCH_ERROR  1
 
 #ifndef ISC_STATUS_LENGTH
-#define ISC_STATUS_LENGTH 20
+#  define ISC_STATUS_LENGTH 20
 #endif
 
 #ifndef SvPV_nolen
-# define SvPV_nolen(sv) SvPV(sv, na)
+#  define SvPV_nolen(sv) SvPV(sv, na)
 #endif
 
-#define DPB_FILL_BYTE(dpb, byte)            \
-    {                           \
-    *dpb = byte;                \
-    dpb += 1;                   \
-    }
+#define DPB_FILL_BYTE(dpb, byte)  \
+{                                 \
+    *dpb = byte;                  \
+    dpb += 1;                     \
+}
 
 /*
  * 2001-02-13 - Mike Shoyher: It's illegal to assign int to char pointer
@@ -70,32 +93,31 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 
 /*
  * 2001-04-15 - Daniel Ritz: fix in isc_vax_integer call. Now using reference
- * to tmp instead of reference to integer because if inter is declared as short
- * InterBase reads to much memory resulting in unexpected values. Now it works
- * un Solaris8/SPARC
+ * to tmp instead of reference to integer because if integer is declared as short
+ * InterBase reads too much memory resulting in unexpected values. Now it works
+ * on Solaris8/SPARC
  */
 
-#define DPB_FILL_INTEGER(dpb, integer)          \
-    {                           \
-    int tmp;                    \
-    tmp = integer;                                   \
-    *(dpb) = 4;                 \
-    dpb += 1;                   \
+#define DPB_FILL_INTEGER(dpb, integer)       \
+{                                            \
+    int tmp = integer;                       \
+    *(dpb) = 4;                              \
+    dpb += 1;                                \
     tmp = isc_vax_integer((char *) &tmp, 4); \
-    memcpy(dpb,&tmp,sizeof(tmp));                \
-    dpb += 4;                   \
-    }
-#define DPB_FILL_STRING(dpb, string)            \
-    {                           \
-    char l = strlen(string) & 0xFF;         \
-    *(dpb) = l;                 \
-    dpb += 1;                   \
-    strncpy(dpb, string, (size_t) l);       \
-    dpb += l;                   \
-    }
+    memcpy(dpb, &tmp, sizeof(tmp));          \
+    dpb += 4;                                \
+}
+
+#define DPB_FILL_STRING(dpb, string)   \
+{                                      \
+    char l = strlen(string) & 0xFF;    \
+    *(dpb) = l;                        \
+    dpb += 1;                          \
+    strncpy(dpb, string, (size_t) l);  \
+    dpb += l;                          \
+}
 
 #define BLOB_SEGMENT        (256)
-#define MAX_BLOB_SEGMENT    (80)
 #define DEFAULT_SQL_DIALECT (1)
 #define INPUT_XSQLDA        (1)
 #define OUTPUT_XSQLDA       (0)
@@ -114,46 +136,62 @@ static const int DBI_SQL_VARCHAR    = SQL_VARCHAR;
 /* data types   */
 /****************/
 
-/* XXX not used yet 
-typedef struct imp_fbh_st imp_fbh_t;
-*/
-
-struct imp_drh_st {
-    dbih_drc_t com;     /* MUST be first element in structure   */
+/* Define driver handle data structure */
+struct imp_drh_st 
+{
+    dbih_drc_t com;     /* MUST be first element in structure */
 };
 
 /* Define dbh implementor data structure */
-struct imp_dbh_st {
-    dbih_dbc_t  com;                /* MUST be first element in structure   */
+struct imp_dbh_st 
+{
+    dbih_dbc_t      com;            /* MUST be first element in structure */
     isc_db_handle   db;
     isc_tr_handle   tr;
-    int             init_commit;    /* takes DBD::Pg's route */
     char ISC_FAR    *tpb_buffer;    /* transaction parameter buffer */
     unsigned short  tpb_length;     /* length of tpb_buffer */
     unsigned short  sqldialect;     /* default sql dialect */
+    short           soft_commit;    /* use soft commit ? */
+    short           soft_autocommit;/* use soft commit for AutoCommit = 1 ? */
+
+    int       sth_ddl;              /* number of open DDL statments */
+    imp_sth_t *first_sth;           /* pointer to first statement */
+    imp_sth_t *last_sth;            /* pointer to last statement */
 };
 
 /* Define sth implementor data structure */
-struct imp_sth_st {
-    dbih_stc_t  com;                /* MUST be first element in structure   */
+struct imp_sth_st 
+{
+    dbih_stc_t      com;                /* MUST be first element in structure */
     isc_stmt_handle stmt;
-    XSQLDA *    out_sqlda;          /* for storing select-list items */
-    XSQLDA *    in_sqlda;           /* for storing placeholder values */
-    char *      cursor_name;
-    long        type;               /* statement type */
-    int         done_desc;          /* is the statement already dbd_describe()-ed? */
-    char        count_item;
-    int         fetched;            /* number of fetched rows */
+    XSQLDA          *out_sqlda;         /* for storing select-list items */
+    XSQLDA          *in_sqlda;          /* for storing placeholder values */
+    char            *cursor_name;
+    long            type;               /* statement type */
+    int             done_desc;          /* is the statement already dbd_describe()-ed? */
+    char            count_item;
+    int             fetched;            /* number of fetched rows */
     char ISC_FAR    *ib_dateformat;
     char ISC_FAR    *ib_timestampformat;
     char ISC_FAR    *ib_timeformat;
+
+    imp_sth_t *prev_sth;                /* pointer to prev statement */
+    imp_sth_t *next_sth;                /* pointer to next statement */
 };
 
-typedef struct vary {
-    short          vary_length;
-    char           vary_string [1];
+
+typedef struct vary 
+{
+    short vary_length;
+    char  vary_string [1];
 } VARY;
 
+
+/* is imp_dbh in soft commit mode? */
+#define is_softcommit(idbh) ((DBIc_has(idbh, DBIcf_AutoCommit) && idbh->soft_autocommit) || \
+                            (!DBIc_has(idbh, DBIcf_AutoCommit) && idbh->soft_commit))
+
+/* These defines avoid name clashes for multiple statically linked DBD's */
 #define dbd_init            ib_init
 #define dbd_db_login        ib_db_login
 #define dbd_db_do           ib_db_do
@@ -176,14 +214,14 @@ typedef struct vary {
 #define dbd_bind_ph         ib_bind_ph
 
 void    do_error _((SV *h, int rc, char *what));
-/* void    fbh_dump _((imp_fbh_t *fbh, int i)); */
 
-void    dbd_init _((dbistate_t *dbistate));
+void    dbd_init     _((dbistate_t *dbistate));
 void    dbd_preparse _((SV *sth, imp_sth_t *imp_sth, char *statement));
-int     dbd_describe _((SV* sth, imp_sth_t *imp_sth));
+int     dbd_describe _((SV *sth, imp_sth_t *imp_sth));
 
-int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh, char *tpb, unsigned short len);
+int ib_start_transaction (SV *h, imp_dbh_t *imp_dbh);
 int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh);
 
 SV* dbd_db_quote(SV* dbh, SV* str, SV* type);
+
 /* end */

@@ -18,13 +18,17 @@ t/40alltypes.t
 t/40bindparam.t
 t/40blobs.t
 t/40cursor.t
+t/40cursoron.t
 t/40doparam.t
 t/40listfields.t
 t/40nulls.t
 t/40numrows.t
+t/41numeric.t
 t/50chopblanks.t
 t/50commit.t
 t/61settx.t
+t/70nestedoff.t
+t/70nestedon.t
 t/InterBase.dbtest
 t/InterBase.mtest
 t/README

@@ -1,14 +1,14 @@
-### $Id: FAQ.pm,v 1.6 2001/08/01 01:14:22 danielritz Exp $
+### $Id: FAQ.pm,v 1.10 2002/04/04 10:38:32 edpratomo Exp $
 ### DBD::InterBase Frequently Asked Questions POD
 ### 
-### This document is Copyright (c)2000 Edwin Pratomo. All rights reserved.
+### This document is Copyright (c)2000-2002 Edwin Pratomo. All rights reserved.
 ### Permission to distribute this document, in full or in part, via email,
 ### Usenet, ftp archives or http is granted providing that no charges are involved,
 ### reasonable attempt is made to use the most current version and all credits
 ### and copyright notices are retained ( the I<AUTHOR> and I<COPYRIGHT> sections ).
 ### Requests for other distribution rights, including incorporation into 
 ### commercial products, such as books, magazine articles or CD-ROMs should be
-### made to Edwin Pratomo <I<ed.pratomo@computer.org>>.
+### made to Edwin Pratomo <I<edpratomo@cpan.org>>.
 ###
 ### This module is released under
 ### the 'Artistic' license which you can find in the perl distribution.
@@ -28,13 +28,13 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.28.4 available on SourceForge.
+C<DBD::InterBase> version 0.30 available on SourceForge.
 
 =head1 SQL Operations
 
 =head2 Why do some operations performing positioned update and delete fail when AutoCommit is on? 
 
-The following code snippet fails:
+For example, the following code snippet fails:
 
  $sth = $dbh->prepare(
  "SELECT * FROM ORDERS WHERE user_id < 5 FOR UPDATE OF comment");
@@ -55,8 +55,14 @@ same transaction context, but as soon as it has finished executing the statement
 B<commits> the transaction, whereas the next fetchrow_array() still needs
 the transaction context!
 
-The workaround for this is to set AutoCommit = 0. If yours is default to
-AutoCommit on, you can put the snippet within a block:
+So the secret to make this work is B<to keep the transaction open>. This can be
+done in two ways:
+
+=over 4
+
+=item * Using AutoCommit = 0
+
+If yours is default to AutoCommit on, you can put the snippet within a block:
 
  {
      $dbh->{AutoCommit} = 0;
@@ -64,9 +70,16 @@ AutoCommit on, you can put the snippet within a block:
      $dbh->commit;
  }
 
-=head2 Nested statement handles break under AutoCommit mode. Any workaround?
+=item * Using $dbh->{ib_softcommit} = 1
 
-The explanation behind this is the same as above. The workaround is also
+This driver-specific attribute is available as of version 0.30. You may want
+to look at t/40cursoron.t to see it in action.
+
+=back
+
+=head2 Nested statement handles break under AutoCommit mode.
+
+The same explanation as above applies. The workaround is also
 much alike:
 
  {
@@ -81,6 +94,9 @@ much alike:
      }
      $dbh->commit;
  }
+
+You may also use $dbh->{ib_softcommit} introduced in version 0.30, please consult
+t/70nestedon.t for an example on how to use it.
 
 =head2 Why do placeholders fail to bind, generating unknown datatype error message?
 
@@ -97,6 +113,7 @@ clause, such as this:
 This deals with the InterBase's SQL parser, not with C<DBD::InterBase>. The
 driver just passes SQL statements through the engine.
 
+
 =head2 How to do automatic increment for a specific field?
 
 Create a generator and a trigger to associate it with the field. The
@@ -112,14 +129,17 @@ PRODUCE_ID with increment size of 1.
    NEW.PRODUCE_ID = GEN_ID(PROD_ID_GEN, 1);
  END");
 
+
 =head2 How can I perform LIMIT clause as I usually do in MySQL?
 
 C<LIMIT> clause let users to fetch only a portion rather than the whole 
 records as the result of a query. This is particularly efficient and useful 
 for paging feature on web pages, where users can navigate back and forth 
-between pages. Using InterBase, this can be emulated by writing a stored 
-procedure. For example, to display a portion of table_forum, first create the 
-following procedure:
+between pages. 
+
+Using InterBase (Firebird is explained later), this can be emulated by writing a
+stored procedure. For example, to display a portion of table_forum, first create 
+the following procedure:
 
  CREATE PROCEDURE PAGING_FORUM (start INTEGER, num INTEGER)
  RETURNS (id INTEGER, title VARCHAR(255), ctime DATE, author VARCHAR(255))
@@ -153,6 +173,15 @@ But never expect this to work:
  "EXECUTE PROCEDURE paging_forum(5,5) RETURNING_VALUES :id, :title, :ctime, 
  :author");
 
+
+With Firebird 1 RCx and later, you can use C<SELECT FIRST>:
+
+ SELECT FIRST 10 SKIP 30 * FROM table_forum;
+
+C<FIRST x> and C<SKIP x> are both optional. C<FIRST> limits the number of
+rows to return, C<SKIP> should be self-explanatory.
+
+
 =head1 Uses of attributes
 
 =head2 How can I use the date/time formatting attributes?
@@ -173,16 +202,19 @@ Then, pass it to prepare() method.
 
  $res = $dbh->selectall_arrayref($stmt, $attr);
 
+
 =head2 Can I set the date/time formatting attributes between prepare and fetch?
 
 No. C<ib_dateformat>, C<ib_timeformat>, and C<ib_timestampformat> can only
 be set during $sth->prepare. If this is a problem to you, let me know, and
 probably I'll add this capability for the next release.
 
+
 =head2 Can I change ib_dialect after DBI->connect ?
 
 No. If this is a problem to you, let me know, and probably I'll add this 
 capability for the next release.
+
 
 =head2 Why do execute(), do() method and rows() method always return -1 upon 
 a successful operation?
@@ -196,9 +228,9 @@ returns -1, because I don't know how to get the number of affected rows :-}
 =head2 I can't find the answer for my question here, where should I direct my question?
 
 For questions regarding InterBase itself, you can join the InterBase mailing
-list at http://www.mers.com/, or if it is not enough, I believe there are
-some commercial supports available out there. http://www.ibphoenix.com/ is a
-good place to check.
+list at http://groups.yahoo.com/group/ib-support/, or if it is not enough, I
+believe there are some commercial supports available out there.
+http://www.ibphoenix.com/ is a good place to check.
 
 For questions about C<DBD::InterBase>, try to look for the answer on C<DBI>
 man page, and C<DBI::FAQ>. If your question is still unanswered, you can
@@ -211,6 +243,8 @@ drop me message or you can post your question to the DBI users mailing list.
 The project is hosted at sourceforge.net. So send me your sourceforge
 username, and let me know what areas you are interested in. 
 
+SourceForge.net project page: http://sourceforge.net/projects/dbi-interbase/
+
 =head2 Is there a mailing list for DBD::InterBase?
 
 Please join dbi-interbase-devel mailing list at 
@@ -221,9 +255,11 @@ http://lists.sourceforge.net/mailman/listinfo/dbi-interbase-devel/
 http://dbi.interbase.or.id/ (stable and development release), and 
 http://www.cpan.org/modules/by-module/DBD/ (stable release only).
 
-=head1 AUTHOR AND COPYRIGHT
+=head1 AUTHORS AND COPYRIGHT
 
-Copyright (C) 2000-2001, Edwin Pratomo I<ed.pratomo@computer.org>.
+Copyright (C) 2000-2002, Edwin Pratomo I<edpratomo@cpan.org>. Daniel Ritz
+I<daniel.ritz@gmx.ch> also writes necessary updates.
+
 Michael Samanov I<samanov@yahoo.com> contributed some important correction.
 
 =cut

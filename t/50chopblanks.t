@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 50chopblanks.t,v 1.6 2001/05/04 10:29:18 edpratomo Exp $
+#   $Id: 50chopblanks.t,v 1.7 2002/04/05 03:12:51 edpratomo Exp $
 #
 #   This driver should check whether 'ChopBlanks' works.
 #
@@ -22,7 +22,7 @@ $test_password = '';
 #
 use DBI;
 use strict;
-DBI->trace(4, "trace.txt");
+#DBI->trace(4, "trace.txt");
 $mdriver = "";
 {
     my $file;

@@ -1,14 +1,13 @@
-
-#   $Id: InterBase.pm,v 1.26 2001/08/01 01:03:32 danielritz Exp $
+#   $Id: InterBase.pm,v 1.38 2002/04/05 03:04:43 edpratomo Exp $
 #
-#   Copyright (c) 1999-2001 Edwin Pratomo
+#   Copyright (c) 1999-2002 Edwin Pratomo
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
 #   with the exception that it cannot be placed on a CD-ROM or similar media
 #   for commercial distribution without the prior approval of the author.
 
-require 5.003;
+require 5.004;
 
 package DBD::InterBase;
 use strict;
@@ -20,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.28.4';
+$VERSION = '0.30';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -37,47 +36,52 @@ sub driver
 
     $class .= "::dr";
 
-    $drh = DBI::_new_drh($class, { 'Name' => 'InterBase',
-                   'Version' => $VERSION,
-                   'Err'    => \$DBD::InterBase::err,
-                   'Errstr' => \$DBD::InterBase::errstr,
-                   'Attribution' => 'DBD::InterBase by Edwin Pratomo'
-                 });
+    $drh = DBI::_new_drh($class, {'Name' => 'InterBase',
+                                  'Version' => $VERSION,
+                                  'Err'    => \$DBD::InterBase::err,
+                                  'Errstr' => \$DBD::InterBase::errstr,
+                                  'Attribution' => 'DBD::InterBase by Edwin Pratomo'});
     $drh;
 }
 
 # taken from JWIED's DBD::mysql, with slight modification
-sub _OdbcParse($$$) {
+sub _OdbcParse($$$) 
+{
     my($class, $dsn, $hash, $args) = @_;
     my($var, $val);
-    if (!defined($dsn)) {
-        return;
-    }
+
+    if (!defined($dsn))
+       { return; }
+
     while (length($dsn)) 
     {
-        if ($dsn =~ /([^;]*)[;](.*)/) {
-#        if ($dsn =~ /([^:;=]*)[:;](.*)/) {
+        if ($dsn =~ /([^;]*)[;](.*)/) 
+        {
             $val = $1;
             $dsn = $2;
-        } else {
+        } 
+        else 
+        {
             $val = $dsn;
             $dsn = '';
         }
-        if ($val =~ /([^=]*)=(.*)/) {
+        if ($val =~ /([^=]*)=(.*)/) 
+        {
             $var = $1;
             $val = $2;
             if ($var eq 'hostname'  ||  $var eq 'host') 
+                { $hash->{'host'} = $val; } 
+            elsif ($var eq 'db'  ||  $var eq 'dbname') 
+                { $hash->{'database'} = $val; } 
+            else 
+                { $hash->{$var} = $val; }
+        } 
+        else 
+        {
+            foreach $var (@$args) 
             {
-                $hash->{'host'} = $val;
-            } elsif ($var eq 'db'  ||  $var eq 'dbname') 
-            {
-                $hash->{'database'} = $val;
-            } else {
-                $hash->{$var} = $val;
-            }
-        } else {
-            foreach $var (@$args) {
-                if (!defined($hash->{$var})) {
+                if (!defined($hash->{$var})) 
+                {
                     $hash->{$var} = $val;
                     last;
                 }
@@ -87,19 +91,23 @@ sub _OdbcParse($$$) {
     $hash->{database} = "$hash->{host}:$hash->{database}" if $hash->{host};
 }
 
-sub _OdbcParseHost ($$) {
+
+sub _OdbcParseHost ($$) 
+{
     my($class, $dsn) = @_;
     my($hash) = {};
     $class->_OdbcParse($dsn, $hash, ['host', 'port']);
     ($hash->{'host'}, $hash->{'port'});
 }
 
+
 package DBD::InterBase::dr;
 
-sub connect {
+sub connect 
+{
     my($drh, $dsn, $dbuser, $dbpasswd, $attr) = @_;
 
-    $dbuser ||= "SYSDBA";
+    $dbuser   ||= "SYSDBA";
     $dbpasswd ||= "masterkey";
 
     my ($this, $private_attr_hash);
@@ -111,8 +119,8 @@ sub connect {
     };
 
     DBD::InterBase->_OdbcParse($dsn, $private_attr_hash,
-                    ['database', 'host', 'port',
-                     'ib_role', 'ib_charset', 'ib_dialect', 'ib_cache']);
+                               ['database', 'host', 'port', 'ib_role', 
+                                'ib_charset', 'ib_dialect', 'ib_cache']);
 
     # second attr args will be retrieved using DBIc_IMP_DATA
     my $dbh = DBI::_new_dbh($drh, {}, $private_attr_hash);
@@ -127,25 +135,29 @@ package DBD::InterBase::db;
 use strict;
 use Carp;
 
-sub do {
+sub do 
+{
     my($dbh, $statement, $attr, @params) = @_;
     my $rows;
-    if (@params) {
+    if (@params) 
+    {
         my $sth = $dbh->prepare($statement, $attr) or return undef;
         $sth->execute(@params) or return undef;
         $rows = $sth->rows;
-    } else {
-        $rows = DBD::InterBase::db::_do($dbh, $statement, $attr)
-            or return undef;
+    } 
+    else 
+    {
+        $rows = DBD::InterBase::db::_do($dbh, $statement, $attr) or return undef;
     }       
     ($rows == 0) ? "0E0" : $rows;
 }
 
-sub prepare {
+
+sub prepare 
+{
     my ($dbh, $statement, $attribs) = @_;
     
-    my $sth = DBI::_new_sth($dbh, {
-        'Statement' => $statement });
+    my $sth = DBI::_new_sth($dbh, {'Statement' => $statement });
     DBD::InterBase::st::_prepare($sth, $statement, $attribs)
         or return undef;
     $sth;
@@ -171,53 +183,34 @@ sub type_info_all {
         LOCAL_TYPE_NAME         =>12,
         MINIMUM_SCALE           =>13,
         MAXIMUM_SCALE           =>14,
-        NUM_PREC_RADIX          =>15,
+        SQL_DATA_TYPE           =>15,
+        SQL_DATETIME_SUB        =>16,       
+        NUM_PREC_RADIX          =>17,
+        INTERVAL_PRECISION      =>18,
     };
 
     my $ti = [
         $names,
-        # name type   prec prefix suffix  create params null case se unsign fix  auto
-        # local    min    max  radix
-        #                                            
-        [ 'SQL_ARRAY', 0, 64536, undef, undef, undef, 1, '1', 0, undef, '0', '0',
-'ARRAY', undef, undef, undef ],
-        [ 'SQL_BLOB',  0, 64536, undef, undef, undef, 1, '1', 0, undef, '0', '0',
-'BLOB', undef, undef, undef ],
-        [ 'SQL_VARYING', DBI::SQL_VARCHAR, 32765,  '\'',  '\'', 'max length', 1, '1', 3, undef, '0', '0',
-'VARCHAR', undef, undef, undef ],
-        [ 'SQL_TEXT', DBI::SQL_VARCHAR, 32765,  '\'',  '\'', 'max length', 1, '1', 3, undef, '0', '0',
-'TEXT', undef, undef, undef ],
-        [ 'SQL_DOUBLE', DBI::SQL_DOUBLE, 18, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
-'DOUBLE', undef, undef, undef ],
-        [ 'SQL_QUAD', DBI::SQL_DOUBLE, 18, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
-'QUAD', undef, undef, undef ],
-        [ 'SQL_FLOAT', DBI::SQL_FLOAT, 12, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
-'FLOAT', undef, undef, undef ],
-        [ 'SQL_LONG', DBI::SQL_INTEGER, 10, undef, undef, undef, 1, '0', 2, '0', '0', '0',
-'LONG', undef, undef, undef ],
-        [ 'SQL_SHORT', DBI::SQL_SMALLINT, 5, undef, undef, undef, 1, '0', 2, '0', '0', '0',
-'SHORT', undef, undef, undef ],
-        [ 'SQL_TIMESTAMP', DBI::SQL_TIMESTAMP, 47, '\'', '\'', undef, 1, '0', 2, undef, '0', '0',
-'TIMESTAMP', undef, undef, undef ],
-        [ 'SQL_D_FLOAT', DBI::SQL_REAL, 24, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
-'D_FLOAT', undef, undef, undef ],
-        [ 'SQL_TYPE_TIME', DBI::SQL_TIME, 16, '\'', '\'', undef, 1, '0', 2, undef, '0', '0',
-'TIME', undef, undef, undef ],
-        [ 'SQL_TYPE_DATE', DBI::SQL_DATE, 10, '\'', '\'', undef, 1, '0', 2, undef, '0', '0',
-'DATE', undef, undef, undef ],
-        [ 'SQL_INT64', DBI::SQL_DOUBLE, 20, undef, undef, undef, 1, '0', 2, '0', '0', '0',
-'INT64', undef, undef, undef ],
-
+        # type-name            data-type           size   prefix suffix  create-params      null case srch, unsg   fix  auto local               min    max    sql-data-type       sql-datetime-sub num-prec-radix  int-prec
+        [ 'BLOB',              0,                  64536, undef, undef,  undef,             1,   1,   0,    undef, 0,   0,   'BLOB',             undef, undef, 0,                  undef,           undef,          undef ],
+        [ 'CHAR',              DBI::SQL_CHAR,      32765, '\'',  '\'',   undef,             1,   1,   3,    undef, 0,   0,   'CHAR',             undef, undef, DBI::SQL_CHAR,      undef,           undef,          undef ],
+        [ 'CHARACTER',         DBI::SQL_CHAR,      32765, '\'',  '\'',   undef,             1,   1,   3,    undef, 0,   0,   'CHAR',             undef, undef, DBI::SQL_CHAR,      undef,           undef,          undef ],
+        [ 'DATE',              DBI::SQL_DATE,      10,    '\'',  '\'',   undef,             1,   0,   2,    undef, 0,   0,   'DATE',             undef, undef, DBI::SQL_DATE,      undef,           undef,          undef ],
+        [ 'DECIMAL',           DBI::SQL_DECIMAL,   20,    undef, undef,  'precision,scale', 1,   0,   2,    0,     0,   0,   'DECIMAL',          0,     18,    DBI::SQL_DECIMAL,   undef,           10,             undef ],
+        [ 'DOUBLE PRECISION',  DBI::SQL_DOUBLE,    64,    undef, undef,  undef,             1,   0,   2,    0,     0,   0,   'DOUBLE PRECISION', undef, undef, DBI::SQL_DOUBLE,    undef,           2,              undef ],
+        [ 'FLOAT',             DBI::SQL_FLOAT,     32,    undef, undef,  undef,             1,   0,   2,    0,     0,   0,   'FLOAT',            undef, undef, DBI::SQL_FLOAT,     undef,           2,              undef ],
+        [ 'INTEGER',           DBI::SQL_INTEGER,   32,    undef, undef,  undef,             1,   0,   2,    0,     1,   0,   'INTEGER',          0,     0,     DBI::SQL_INTEGER,   undef,           2,              undef ],
+        [ 'NUMERIC',           DBI::SQL_NUMERIC,   20,    undef, undef,  'precision,scale', 1,   0,   2,    0,     0,   0,   'NUMERIC',          0,     18,    DBI::SQL_NUMERIC,   undef,           10,             undef ],
+        [ 'SMALLINT',          DBI::SQL_SMALLINT,  16,    undef, undef,  undef,             1,   0,   2,    undef, 1,   0,   'SMALLINT',         0,     0,     DBI::SQL_SMALLINT,  undef,           2,              undef ],
+        [ 'TIME',              DBI::SQL_TIME,      64,    '\'',  '\'',   undef,             1,   0,   2,    undef, 1,   0,   'TIME',             4,     4,     DBI::SQL_TIME,      undef,           2,              undef ],
+        [ 'TIMESTAMP',         DBI::SQL_TIMESTAMP, 64,    '\'',  '\'',   undef,             1,   0,   2,    undef, 1,   0,   'TIMESTAMP',        4,     4,     DBI::SQL_TIMESTAMP, undef,           2,              undef ],
+        [ 'VARCHAR',           DBI::SQL_VARCHAR,   32765, '\'',  '\'',   'length',          1,   1,   3,    undef, 0,   0,   'VARCHAR',          undef, undef, DBI::SQL_VARCHAR,   undef,           undef,          undef ],
+        [ 'CHAR VARYING',      DBI::SQL_VARCHAR,   32765, '\'',  '\'',   'length',          1,   1,   3,    undef, 0,   0,   'VARCHAR',          undef, undef, DBI::SQL_VARCHAR,   undef,           undef,          undef ],
+        [ 'CHARACTER VARYING', DBI::SQL_VARCHAR,   32765, '\'',  '\'',   'length',          1,   1,   3,    undef, 0,   0,   'VARCHAR',          undef, undef, DBI::SQL_VARCHAR,   undef,           undef,          undef ],
        ];
        return $ti;
 }
 
-# XXX TODO
-#sub type_info
-#{
-#    my ($dbh, $type) = @_;
-#    
-#}
 
 # from Michael Arnett <marnett@samc.com> :
 sub tables
@@ -225,12 +218,14 @@ sub tables
     my $dbh = shift;
     my @tables;
     my @row;
-    my $stmt = 
-'SELECT RDB$RELATION_NAME FROM RDB$RELATIONS WHERE (RDB$SYSTEM_FLAG IS NULL 
-OR RDB$SYSTEM_FLAG = 0) AND RDB$VIEW_SOURCE IS NULL';
 
-    my $sth = $dbh->prepare($stmt) or
-        return undef;
+    my $sth = $dbh->prepare(q{
+      SELECT rdb$relation_name 
+      FROM rdb$relations 
+      WHERE (rdb$system_flag IS NULL OR rdb$system_flag = 0) 
+        AND rdb$view_source IS NULL;  
+    }) or return undef;
+
     $sth->{ChopBlanks} = 1;
     $sth->execute;
     while (@row = $sth->fetchrow_array) {
@@ -260,14 +255,15 @@ sub table_info
         CAST('VIEW' AS CHAR(5))   TABLE_TYPE,
         b.rdb$description         REMARKS
       FROM rdb$relations b
-      WHERE b.rdb$system_flag=0 AND b.rdb$view_blr IS NULL
+      WHERE b.rdb$system_flag=0 AND b.rdb$view_blr IS NOT NULL
     });
     $sth->execute() or return undef;
 
     return $sth;
 }
 
-sub ping {
+sub ping 
+{
     my($dbh) = @_;
 
     local $SIG{__WARN__} = sub { } if $dbh->{PrintError};
@@ -283,7 +279,7 @@ __END__
 
 =head1 NAME
 
-DBD::InterBase - DBI driver for InterBase RDBMS server
+DBD::InterBase - DBI driver for Firebird and InterBase RDBMS server
 
 =head1 SYNOPSIS
 
@@ -296,7 +292,7 @@ DBD::InterBase - DBI driver for InterBase RDBMS server
 =head1 DESCRIPTION
 
 DBD::InterBase is a Perl module which works with the DBI module to provide
-access to InterBase databases.
+access to Firebird and InterBase databases.
 
 =head1 MODULE DOCUMENTATION
 
@@ -638,10 +634,23 @@ Not yet implemented.
 
 Implemented by DBI, not used by the driver.
 
+=item B<ib_softcommit>  (driver-specific, boolean)
+
+Set this attribute to TRUE to use InterBase's soft commit feature (default
+to FALSE). Soft commit retains the internal transaction handle when
+committing a transaction, while the default commit behavior always closes
+and invalidates the transaction handle.
+
+Since the transaction handle is still open, there is no need to start a new transaction 
+upon every commit, so applications can gain performance improvement. Using soft commit is also 
+desirable when dealing with nested statement handles under AutoCommit on. 
+
+Switching the attribute's value from TRUE to FALSE will force hard commit thus 
+closing the current transaction. 
+
 =back
 
 =head1 STATEMENT HANDLE OBJECTS
-
 
 =head2 Statement Handle Methods
 
@@ -830,7 +839,51 @@ anonymous array:
     'set_tx_param'
  );
 
-Currently, table reservation is not yet supported.
+Table reservation is supported since C<DBD::InterBase 0.30>. Names of the
+tables to reserve as well as their reservation params/values are specified
+inside a hashref, which is then passed as the value of C<-reserving>.
+
+The following example reserves C<foo_table> with C<read> lock and C<bar_table> 
+with C<read> lock and C<protected> access:
+
+ $dbh->func(
+    -access_mode     => 'read_write',
+    -isolation_level => 'read_committed',
+    -lock_resolution => 'wait',
+    -reserving       =>
+        {
+            foo_table => {
+                lock    => 'read',
+            },
+            bar_table => {
+                lock    => 'read',
+                access  => 'protected',
+            },
+        },
+    'set_tx_param'
+ );
+
+Possible table reservation parameters are:
+
+=over 4
+
+=item C<access> (optional)
+
+Valid values are C<shared> or C<protected>.
+
+=item C<lock> (required)
+
+Valid values are C<read> or C<write>.
+
+=back
+
+Under C<AutoCommit> mode, invoking this method doesn't only change the
+transaction parameters (as with C<AutoCommit> off), but also commits the
+current transaction. The new transaction parameters will be used in
+any newly started transaction. 
+
+C<set_tx_param()> can also be invoked with no parameter in which it resets
+transaction parameters to the default value.
 
 =back
 
@@ -889,6 +942,8 @@ an eval block.
 
 =item Linux, glibc-2.1.2, x86 egcs-1.1.2, kernel 2.2.12-20. 
 
+=item Linux, glibc-2.2.3, x86 gcc-2.95.3, kernel 2.4.18. 
+
 =item FreeBSD
 
 =item SPARC Solaris
@@ -901,27 +956,43 @@ an eval block.
 
 =over 4
 
-=item InterBase 6.0 SS and Classic for Linux
+=item InterBase 6.0/6.01 SS and Classic for Linux
 
-=item InterBase 6.0 for Windows, FreeBSD, SPARC Solaris
+=item InterBase 6.0/6.01 for Windows, FreeBSD, SPARC Solaris
+
+=item FireBird 1.0 Final SS for Windows, Linux
 
 =back
 
-=head1 AUTHOR
+=head1 AUTHORS
 
-=item * DBI by Tim Bunce <Tim.Bunce@ig.co.uk>
+=over 4
 
-=item * DBD::InterBase by Edwin Pratomo <ed.pratomo@computer.org>
+=item * DBI by Tim Bunce <Tim.Bunce@pobox.com>
 
-Partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
+=item * DBD::InterBase by Edwin Pratomo <edpratomo@cpan.org>
+
+Daniel Ritz <daniel_ritz@gmx.ch> is the SPARC Solaris and Win32 porter, helps hunting bugs and adding new features. 
+
+Ilya Verlinsky <ilya@wsi.net> contributes bug fixes.
+
+This module is partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
 DBD::mysql, and Edmund Mergl's DBD::Pg.
 
-Daniel Ritz <daniel_ritz@gmx.ch> works on SPARC Solaris and Win32 ports.
+=back
 
-=head1 BUGS
+=head1 BUGS/LIMITATIONS
 
-Uses of nested statement handles break under AutoCommit mode. As the
-workaround, try to turn off AutoCommit attribute inside a block. 
+No bugs known at this time. But there are some limitations:
+
+=over 4
+
+=item * Arrays are not (yet) supported
+
+=item * Read/Write BLOB fields block by block not (yet) supported. The
+maximum size of a BLOB read/write is hardcoded to about 1MB.
+
+=back
 
 =head1 SEE ALSO
 
@@ -929,13 +1000,20 @@ DBI(3).
 
 =head1 COPYRIGHT
 
-The DBD::InterBase module is a free software. 
+The DBD::InterBase module is Copyright (c) 1999-2002 Edwin Pratomo.
+
+The DBD::InterBase module is free software. 
 You may distribute under the terms of either the GNU General Public
 License or the Artistic License, as specified in the Perl README file,
 with the exception that it cannot be placed on a CD-ROM or similar media
 for commercial distribution without the prior approval of the author.
 
 =head1 ACKNOWLEDGEMENTS
+
+Pavel Zheltouhov <I<pavlo@tvrn.ru>> wrote the initial code for table reservation.
+
+Peter Wilkinson <I<pwilkinson@thirdfloor.com.au>> sent a patch for Makefile.PL
+to add support for Visual C++ 7 / PPM.
 
 Mark D. Anderson <I<mda@discerning.com>>, and Michael Samanov
 <I<samanov@yahoo.com>> gave important feedbacks and ideas during the early

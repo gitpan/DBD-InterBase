@@ -1,8 +1,8 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40cursor.t,v 1.1 2001/03/22 05:52:13 edpratomo Exp $
+#   $Id: 40cursoron.t,v 1.4 2002/04/05 03:12:51 edpratomo Exp $
 #
-#   This is a test for CursorName attribute.
+#   This is a test for CursorName attribute with AutoCommit On.
 #
 
 
@@ -20,6 +20,7 @@ my $rec_num = 2;
 #
 use DBI;
 use vars qw($verbose);
+#DBI->trace(4, "trace.txt");
 
 $mdriver = "";
 foreach $file ("lib.pl", "t/lib.pl") {
@@ -46,6 +47,8 @@ while (Testing()) {
     #   Connect to the database
     Test($state or $dbh = DBI->connect($test_dsn, $test_user, $test_password))
     or ServerError();
+
+    $dbh->{ib_softcommit} = 1;
 
     #
     #   Find a possible new table name
@@ -78,8 +81,6 @@ while (Testing()) {
         Test($state or $cursor->execute($_, $values{$_}))
             or DbiError($cursor->err, $cursor->errstr);
     }
-
-    $dbh->{AutoCommit} = 0;
 
     $stmt = "SELECT * FROM $table WHERE user_id < 5 FOR UPDATE OF comment";
 
@@ -121,9 +122,6 @@ while (Testing()) {
         }
     }
 
-    Test($state or $dbh->commit)
-        or DbiError($dbh->err, $dbh->errstr);
-
     #
     #  Drop the test table
     #
@@ -133,8 +131,6 @@ while (Testing()) {
     Test($state or $cursor->execute)
     or DbiError($cursor->err, $cursor->errstr);
 
-    Test($state or $dbh->commit)
-    or DbiError($dbh->err, $dbh->errstr);
 
     #  NUM_OF_FIELDS should be zero (Non-Select)
     Test($state or ($cursor->{'NUM_OF_FIELDS'} == 0))

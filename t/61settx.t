@@ -1,10 +1,12 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 61settx.t,v 1.2 2001/04/19 14:42:39 edpratomo Exp $
+#   $Id: 61settx.t,v 1.5 2002/04/05 03:12:51 edpratomo Exp $
 #
 #   This is a test for set_tx_param() private method.
 #
 
+use strict;
+use vars qw($mdriver $state $test_dsn $test_user $test_password);
 
 #
 #   Make -w happy
@@ -24,7 +26,7 @@ use vars qw($verbose);
 
 
 $mdriver = "";
-foreach $file ("lib.pl", "t/lib.pl") {
+foreach my $file ("lib.pl", "t/lib.pl") {
     do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
                exit 10;
               }
@@ -44,6 +46,8 @@ sub ServerError() {
 }
 
 while (Testing()) {
+    my ($dbh1, $dbh2);
+
     #
     #   Connect to the database
     Test($state or $dbh1 = DBI->connect($test_dsn, $test_user, $test_password))
@@ -55,7 +59,7 @@ while (Testing()) {
     #
     #   Find a possible new table name
     #
-     Test($state or $table = FindNewTable($dbh1))
+     Test($state or my $table = FindNewTable($dbh1))
        or DbiError($dbh1->err, $dbh1->errstr);
 
     #
@@ -80,22 +84,25 @@ while (Testing()) {
     or DbiError($dbh1->err, $dbh1->errstr);
 
     Test($state or $dbh2->func(
-        -isolation_level => 'snapshot_table_stability',
+#        -isolation_level => 'snapshot_table_stability',
+        -access_mode     => 'read_only',
         -lock_resolution => 'no_wait',
         'set_tx_param'))
     or DbiError($dbh2->err, $dbh2->errstr);
 
-#    DBI->trace(1, "trace.txt");
+    #DBI->trace(3, "trace.txt");
     {
         local $dbh1->{AutoCommit} = 0;
         local $dbh2->{PrintError} = 0;
 
-        my ($stmt, $stmt2);
+        my ($stmt, $select_stmt);
         unless ($state) {
             $stmt = "INSERT INTO $table VALUES(?, 'Yustina')";
-#           $stmt = "INSERT INTO $table VALUES(1, 'Yustina')";
-#           $stmt2 = "INSERT INTO $table VALUES(2, 'Yustina')";
+            $select_stmt = "SELECT * FROM $table WHERE 1 = 0";
         }
+
+        Test($state or my $sth2 = $dbh2->prepare($select_stmt))
+            or DbiError($dbh2->err, $dbh2->errstr);
 
         Test($state or $dbh1->do($stmt, undef, 1))
             or DbiError($dbh1->err, $dbh1->errstr);
@@ -103,8 +110,49 @@ while (Testing()) {
         # expected failure:
         Test($state or not $dbh2->do($stmt, undef, 2))
             or DbiError($dbh2->err, $dbh2->errstr);
-    }
 
+        # reading should be ok here:
+        Test($state or $sth2->execute)
+            or DbiError($sth2->err, $sth2->errstr);
+
+        Test($state or $sth2->finish)
+            or DbiError($sth2->err, $sth2->errstr);
+
+        # committing the first trans
+        Test($state or $dbh1->commit)
+            or DbiError($dbh1->err, $dbh1->errstr);
+
+        Test($state or $dbh1->func( 
+            -access_mode     => 'read_write',
+            -isolation_level => 'read_committed',
+            -lock_resolution => 'wait',
+            -reserving       =>
+                {
+                    $table => {
+                        lock    => 'write',
+                        access  => 'protected',
+                    },
+                },
+            'set_tx_param'))
+        or DbiError($dbh1->err, $dbh1->errstr);
+
+        Test($state or $dbh2->func(
+        #    -isolation_level => 'snapshot_table_stability',
+            -lock_resolution => 'no_wait',
+            'set_tx_param'))
+        or DbiError($dbh2->err, $dbh2->errstr);
+
+        Test($state or $dbh1->do($stmt, undef, 2))
+            or DbiError($dbh1->err, $dbh1->errstr);
+
+        Test($state or $dbh2->do($stmt, undef, 3))
+            or DbiError($dbh2->err, $dbh2->errstr);
+
+        # committing the first trans
+        Test($state or $dbh1->commit)
+            or DbiError($dbh1->err, $dbh1->errstr);
+
+    }
     #
     #  Drop the test table
     #
