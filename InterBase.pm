@@ -1,5 +1,5 @@
 
-#   $Id: InterBase.pm,v 1.18 2001/03/24 14:04:10 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.19 2001/03/25 01:44:11 edpratomo Exp $
 #
 #   Copyright (c) 1999-2001 Edwin Pratomo
 #
@@ -20,7 +20,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.25.0';
+$VERSION = '0.25.1';
 
 bootstrap DBD::InterBase $VERSION;
 

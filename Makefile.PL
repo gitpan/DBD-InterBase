@@ -1,5 +1,5 @@
 
-#   $Id: Makefile.PL,v 1.8 2001/03/22 05:54:40 edpratomo Exp $
+#   $Id: Makefile.PL,v 1.11 2001/03/25 01:57:53 edpratomo Exp $
 #
 #   Copyright (c) 1999-2001 Edwin Pratomo
 #
@@ -63,8 +63,13 @@ sub make_test_conf {
         close F;
     }
 
-    $path = prompt("\nFull path to your test database:", $path);
-        
+    for (1..3) {
+        $path = prompt("\nFull path to your test database:", $path);
+        last if $path;
+    }
+
+    die "Must specify a test database" unless $path;
+
     unless (-f $path) {
         print <<"EOM";
 Can't find $path
@@ -96,10 +101,13 @@ sub create_test_db {
     }
     close T;
 
-    my $isql = qx[which isql];
-    chomp $isql; if ($isql =~ /no isql in/) {
-        print "Can't found isql.\n";
-        $isql = undef;
+    my $isql;
+    for (split /:/, $ENV{PATH}) {
+        s#/+$##g; 
+        if (-x "$_/isql") {
+            $isql = "$_/isql";
+            last;
+        }
     }
 
 EXEC: 
