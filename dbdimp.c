@@ -1,8 +1,8 @@
 /*
-   $Id: dbdimp.c,v 1.102 2003/11/21 20:45:50 danielritz Exp $
+   $Id: dbdimp.c,v 1.105 2004/02/25 04:38:03 edpratomo Exp $
 
-   Copyright (c) 1999-2002  Edwin Pratomo
-   Portions Copyright (c) 2001-2002  Daniel Ritz
+   Copyright (c) 1999-2004  Edwin Pratomo
+   Portions Copyright (c) 2001-2003  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -258,8 +258,6 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     char *ib_charset, *ib_role;
     char ISC_FAR *dpb_buffer, *dpb;
 
-    char ISC_FAR *user;
-    char ISC_FAR *password;
     char ISC_FAR *database;
 
     STRLEN len; /* for SvPV */
@@ -317,24 +315,15 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     if (SvTYPE(hv) != SVt_PVHV)
         return FALSE;
 
-    if ((svp = hv_fetch(hv, "user", 4, FALSE)))
-    {
-        user = SvPV(*svp, len);
-        if (!len) user = NULL;
-        buflen += len;
+    if (uid != NULL) {
+        buflen += strlen(uid) + 1;
+        buflen += 2;
     }
-    else user = NULL;
-    buflen += 2;
 
-    if ((svp = hv_fetch(hv, "password", 8, FALSE)))
-    {
-        password = SvPV(*svp, len);
-        if (!len) password = NULL;
-         buflen += len;
-   }
-    else password = NULL;
-    buflen += 2;
-
+    if (pwd != NULL) {
+        buflen += strlen(pwd) + 1;
+        buflen += 2;
+    }
 
     /* does't go to DPB -> no buflen inc */
     if ((svp = hv_fetch(hv, "database", 8, FALSE)))
@@ -883,7 +872,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
              * the number of rows before the client app
              * fetches them all.
              */
-             count_item = isc_info_req_select_count;
+             //count_item = isc_info_req_select_count;
              break;
 
         case isc_info_sql_stmt_insert:
@@ -1013,8 +1002,9 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
 {
     D_imp_dbh_from_sth;
     ISC_STATUS status[ISC_STATUS_LENGTH];
-    char       stmt_info[1];
-    char       info_buffer[20];
+    char       stmt_info[1], count_info[1];
+    char       info_buffer[20], count_buffer[33];
+    char       *p;
     int        result = -2;
     int        row_count = 0;
 
@@ -1127,28 +1117,17 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
 
     if (imp_sth->count_item)
     {
-        stmt_info[0] = imp_sth->count_item; /* isc_info_sql_records; */
-        isc_dsql_sql_info(status, &(imp_sth->stmt),
-                          sizeof (stmt_info), stmt_info,
-                          sizeof (info_buffer), info_buffer);
-
-        /* perhaps this is a too strong exception */
-        if (ib_error_check(sth, status))
-        {
+        //PerlIO_printf(PerlIO_stderr(), "calculating row count\n");
+        row_count = ib_rows(sth, &(imp_sth->stmt), imp_sth->count_item);
+        if (row_count <= -2)
             ib_cleanup_st_execute(imp_sth);
-            return FALSE;
-        }
+        else
+            result = row_count;
+    } else 
+        result = -1;
 
-        {
-            short l = (short) isc_vax_integer((char *) info_buffer + 1, 2);
-            row_count = isc_vax_integer((char *) info_buffer + 3, l);
-        }
-    }
-
-    result = -1;
-    /* XXX attempt to return number of affected rows still doesn't work */
     DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: row count: %d.\n"
-                            "dbd_st_execute: count_item: %c.\n",
+                            "dbd_st_execute: count_item: %d.\n",
                             row_count, imp_sth->count_item));
 
     return result;
@@ -2932,6 +2911,35 @@ int dbd_st_rows(SV* sth, imp_sth_t* imp_sth)
         return imp_sth->fetched;
     else
         return -1; /* unknown */
+}
+
+long ib_rows(SV *xxh, isc_stmt_handle *h_stmt, char count_type)
+{
+    ISC_STATUS status[ISC_STATUS_LENGTH];
+    short l;
+    char count_is;
+    char count_info[1], count_buffer[33];
+    char *p;
+    long row_count = 0;
+
+    count_info[0] = isc_info_sql_records;
+    if (isc_dsql_sql_info(status, h_stmt,
+                      sizeof(count_info), count_info,
+                      sizeof(count_buffer), count_buffer))
+    {
+        if (ib_error_check(xxh, status))
+            return -2;      /* error */
+    }
+    for (p = count_buffer + 3; *p != isc_info_end;) {
+        count_is = *p++;
+        l = (short) isc_vax_integer(p, 2);
+        p += 2;
+        row_count = (long) isc_vax_integer(p, l);
+        p += l;
+        if (count_is == count_type)
+            break;
+    }
+    return row_count;
 }
 
 /* end */

@@ -1,4 +1,4 @@
-### $Id: FAQ.pm,v 1.12 2003/11/21 03:59:03 edpratomo Exp $
+### $Id: FAQ.pm,v 1.13 2004/02/25 07:38:06 edpratomo Exp $
 ### DBD::InterBase Frequently Asked Questions POD
 ### 
 ### This document is Copyright (c)2000-2003 Edwin Pratomo. All rights reserved.
@@ -28,7 +28,7 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.42 available on SourceForge.
+C<DBD::InterBase> version 0.43 available on SourceForge.
 
 =head1 SQL Operations
 
@@ -220,8 +220,9 @@ capability for the next release.
 a successful operation?
 
 Incorrect question. $sth->rows returns the number of fetched rows after a
-successful SELECT. But it's true that for statements other than SELECT, it 
-returns -1, because I don't know how to get the number of affected rows :-}
+successful SELECT. Starting from version 0.43, execute() method returns the
+number of affected rows. But it's true that do() method returns -1, this
+will change in future release.
 
 =head1 Sources for Help
 
@@ -252,7 +253,7 @@ http://www.cpan.org/modules/by-module/DBD/ (stable release only).
 
 =head1 AUTHORS AND COPYRIGHT
 
-Copyright (C) 2000-2003, Edwin Pratomo I<edpratomo@cpan.org>. Daniel Ritz
+Copyright (C) 2000-2004, Edwin Pratomo I<edpratomo@cpan.org>. Daniel Ritz
 I<daniel.ritz@gmx.ch> also writes necessary updates.
 
 Michael Samanov I<samanov@yahoo.com> contributed some important correction.

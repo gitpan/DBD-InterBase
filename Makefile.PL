@@ -1,5 +1,5 @@
 
-#   $Id: Makefile.PL,v 1.28 2003/11/22 03:12:11 edpratomo Exp $
+#   $Id: Makefile.PL,v 1.29 2003/12/06 11:11:54 edpratomo Exp $
 #
 #   Copyright (c) 1999-2003 Edwin Pratomo
 #   Portions Copyright (c) 2001-2003 Daniel Ritz
@@ -141,7 +141,7 @@ sub dir_choice
 sub make_test_conf
 {
     my $test_conf = './t/test.conf';
-    my ($dsn, $user, $pass, $path);
+    my ($dsn, $user, $pass, $path, $db, $host);
 
     # read cached config if available
     if (-r $test_conf)
@@ -150,24 +150,31 @@ sub make_test_conf
         open F, $test_conf or die "Can't open $test_conf: $!";
         local @ARGV = ($test_conf);
         ($dsn, $user, $pass) = map {chomp;$_} <>;
-        ($path) = $dsn =~ /(?!db|database)=([^;]+);/;
+        ($db) = $dsn =~ /(?:db|database)=([^;]+);/;
+        ($host) = $dsn =~ /(?:host|hostname)=([^;]+);/;
+        $path = ($host ? "$host:" : '') . $db;
         close F;
     }
 
     # ask for database path
     DBPATH: {
         for (1..3) {
-            last if $path = prompt("\nFull path to your test database :", $path);
+            last if $path = prompt("\nFull path to your test database: ", $path);
         }
         die "Must specify a test database" unless $path;
 
+        ($db, $host) = reverse split /:/, $path;
+
+        # no longer necessary
         #PFW - isql on windows doesn't seem to work without the localhost in the db path
-        my $hostpath = $path;
-        if ($path =~ /^localhost:(.+)/) {
-            $hostpath = $1;
-        }
+        #my $hostpath = $path;
+        #if ($path =~ /^localhost:(.+)/) {
+        #    $hostpath = $1;
+        #}
+
         # if DB doesn't exist ask for creation
-        unless (-f $hostpath)
+        if ((!$host || $host =~ /localhost/) && !-f $db or
+            $host && $host !~ /localhost/)
         {
             print <<"EOM";
 $path doesn't exist. 
@@ -182,7 +189,7 @@ EOM
         else
         {
             print <<"EOM";
-$path exists.
+$db exists.
 Trying to use an existing database..
 Please enter a username to connect.
 EOM
@@ -198,26 +205,27 @@ EOM
 
             unless (defined $dialect) {
                 print <<"EOM";
+
 Dialect of $path is UNKNOWN.
 This test requires a database of dialect 3. You may specify a non-existent database to create a new one.
 EOM
                 my $is_proceed = prompt("Proceed anyway or create a NEW test database (P/N)?", "P");
                 last DBPATH if $is_proceed =~ /P/i;
-                $hostpath = $path = undef, goto DBPATH;
+                $path = undef, goto DBPATH;
             }
             unless ($dialect == 3) {
                 print <<"EOM";
 The dialect of $path is: $dialect !!.
 This test requires a database of dialect 3. Please specify a non-existent database to create a new one.
 EOM
-                $hostpath = $path = undef, goto DBPATH;
+                $path = undef, goto DBPATH;
             }
         }
     }
 
     # save test config to file
     open F, ">$test_conf" or die "Can't write $test_conf: $!";
-    print F "dbi:InterBase:db=$path;ib_dialect=3\n$user\n$pass\n";
+    print F 'dbi:InterBase:' . ($host ? "host=$host;" : '') . "db=$db;ib_dialect=3\n$user\n$pass\n";
     close F;
 }
 

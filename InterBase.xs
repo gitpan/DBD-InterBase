@@ -1,8 +1,8 @@
 /*
-   $Id: InterBase.xs,v 1.41 2003/05/20 10:41:27 edpratomo Exp $
+   $Id: InterBase.xs,v 1.43 2003/12/06 11:04:10 edpratomo Exp $
 
    Copyright (c) 1999-2003  Edwin Pratomo
-   Portions Copyright (c) 2001-2002  Daniel Ritz
+   Portions Copyright (c) 2001-2003  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -21,6 +21,11 @@ isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *u
     void *context = PERL_GET_CONTEXT;
     PERL_SET_CONTEXT(ev->dbh->context);
     {
+#else
+    void *context = PERL_GET_CONTEXT;
+    PerlInterpreter *cb_perl = perl_alloc();
+    PERL_SET_CONTEXT(cb_perl);
+    {
 #endif
         dSP;
         char ISC_FAR *result = ev->result_buffer;
@@ -36,8 +41,6 @@ isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *u
         FREETMPS;
         LEAVE;
 
-        /* PerlIO_printf(PerlIO_stderr(), "Event id: %ld\n", ev->id); */
-
         /* Copy the updated buffer to the result buffer */
         while (length--)
             *result++ = *updated++;
@@ -48,6 +51,10 @@ isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *u
 
     /* restore old context*/
     PERL_SET_CONTEXT(context);
+#else
+    }
+    PERL_SET_CONTEXT(context);
+    perl_free(cb_perl);
 #endif
 
     return (0);
@@ -1037,5 +1044,43 @@ callback_called(evh)
     IB_EVENT *evh
     CODE:
     RETVAL = evh->cb_called;
+    OUTPUT:
+    RETVAL
+
+MODULE = DBD::InterBase     PACKAGE = DBD::InterBase::st
+
+char*
+ib_plan(sth)
+    SV *sth
+    CODE:
+{
+    D_imp_sth(sth);
+    ISC_STATUS  status[ISC_STATUS_LENGTH];
+    char plan_info[1];
+    char plan_buffer[PLAN_BUFFER_LEN];
+
+    RETVAL = NULL;
+    memset(plan_buffer, 0, PLAN_BUFFER_LEN);
+    plan_info[0] = isc_info_sql_get_plan;
+
+    if (isc_dsql_sql_info(status, &(imp_sth->stmt), sizeof(plan_info), plan_info,
+                  sizeof(plan_buffer), plan_buffer)) 
+    {
+        if (ib_error_check(sth, status))
+        {
+            ib_cleanup_st_prepare(imp_sth);
+            XSRETURN_UNDEF;
+        }
+    }
+    if (plan_buffer[0] == isc_info_sql_get_plan) {
+        short l = (short) isc_vax_integer((char *)plan_buffer + 1, 2);
+        if ((RETVAL = (char*)safemalloc(sizeof(char) * (l + 2))) == NULL) {
+            do_error(sth, 2, "Failed to allocate plan buffer");
+            XSRETURN_UNDEF;
+        }
+        sprintf(RETVAL, "%.*s%s", l, plan_buffer + 3, "\n");
+        //PerlIO_printf(PerlIO_stderr(), "Len: %d, orig len: %d\n", strlen(imp_sth->plan), l);
+    }
+}
     OUTPUT:
     RETVAL

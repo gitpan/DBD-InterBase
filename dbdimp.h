@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.47 2003/11/16 18:12:12 danielritz Exp $
+   $Id: dbdimp.h,v 1.48 2003/12/06 11:07:21 edpratomo Exp $
 
    Copyright (c) 1999-2002  Edwin Pratomo
    Portions Copyright (c) 2001-2002  Daniel Ritz
@@ -152,6 +152,7 @@ do {                             \
 #define DEFAULT_SQL_DIALECT (1)
 #define INPUT_XSQLDA        (1)
 #define OUTPUT_XSQLDA       (0)
+#define PLAN_BUFFER_LEN     2048
 
 #define SUCCESS             (0)
 #define FAILURE             (-1)
@@ -281,6 +282,7 @@ int ib_error_check(SV *h, ISC_STATUS *status);
 int ib_start_transaction   (SV *h, imp_dbh_t *imp_dbh);
 int ib_commit_transaction  (SV *h, imp_dbh_t *imp_dbh);
 int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh);
+long ib_rows(SV *xxh, isc_stmt_handle *h_stmt, char count_type);
 
 SV* dbd_db_quote(SV* dbh, SV* str, SV* type);
 

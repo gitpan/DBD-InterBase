@@ -1,6 +1,6 @@
-#   $Id: InterBase.pm,v 1.47 2003/11/21 20:45:50 danielritz Exp $
+#   $Id: InterBase.pm,v 1.49 2004/02/25 04:38:03 edpratomo Exp $
 #
-#   Copyright (c) 1999-2002 Edwin Pratomo
+#   Copyright (c) 1999-2004 Edwin Pratomo
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.42';
+$VERSION = '0.43';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -558,7 +558,9 @@ diminishes as this method calls prepare() for binding the placeholders.
 Instead of calling this method repeatedly with bind values, it would be
 better to call prepare() once, and execute() many times.
 
-See the notes for the execute method elsewhere in this document. 
+See the notes for the execute method elsewhere in this document. Unlike the
+execute method, currently this method doesn't return the number of affected
+rows. 
 
 =item B<commit>
 
@@ -687,7 +689,6 @@ Not supported by this driver.
   $rv = $sth->execute(@bind_values);
 
 Supported by the driver as proposed by DBI. 
-On success, this method returns -1 instead of the number of affected rows.
 
 =item B<fetchrow_arrayref>
 
@@ -983,7 +984,7 @@ Reinitialize event handle.
 
 =back
 
-=head2 Retrieving Firebird/InterBase specific database information
+=head2 Retrieving Firebird/InterBase specific information
 
 =over
 
@@ -992,7 +993,16 @@ Reinitialize event handle.
  $hash_ref = $dbh->func(@info, 'ib_database_info');
  $hash_ref = $dbh->func([@info], 'ib_database_info');
 
-Retrieve information from current database connection. 
+Retrieve database information from current connection. 
+
+=item C<ib_plan>
+
+ $plan = $sth->func('ib_plan');
+
+Retrieve query plan from a prepared SQL statement. 
+
+ my $sth = $dbh->prepare('SELECT * FROM foo');
+ print $sth->func('ib_plan'); # PLAN (FOO NATURAL)
 
 =back
 
@@ -1081,6 +1091,8 @@ an eval block.
 
 =item Firebird 1.5 RC7 for Windows, Linux
 
+=item Firebird 1.5 Final for Linux
+
 =back
 
 =head1 AUTHORS
@@ -1115,7 +1127,7 @@ DBI(3).
 
 =head1 COPYRIGHT
 
-The DBD::InterBase module is Copyright (c) 1999-2003 Edwin Pratomo.
+The DBD::InterBase module is Copyright (c) 1999-2004 Edwin Pratomo.
 Portions Copyright (c) 2001-2003  Daniel Ritz.
 
 The DBD::InterBase module is free software. 
