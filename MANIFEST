@@ -40,3 +40,4 @@ t/ak-dbd.t
 t/dbdadmin.t
 t/lib.pl
 t/skeleton.test
+META.yml                                Module meta-data in YAML

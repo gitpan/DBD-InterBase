@@ -1,4 +1,4 @@
-#   $Id: InterBase.pm,v 1.45 2003/05/21 06:20:10 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.47 2003/11/21 20:45:50 danielritz Exp $
 #
 #   Copyright (c) 1999-2002 Edwin Pratomo
 #
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.41';
+$VERSION = '0.42';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -40,7 +40,7 @@ sub driver
                                   'Version' => $VERSION,
                                   'Err'    => \$DBD::InterBase::err,
                                   'Errstr' => \$DBD::InterBase::errstr,
-                                  'Attribution' => 'DBD::InterBase by Edwin Pratomo'});
+                                  'Attribution' => 'DBD::InterBase by Edwin Pratomo and Daniel Ritz'});
     $drh;
 }
 
@@ -69,7 +69,7 @@ sub _OdbcParse($$$)
         {
             $var = $1;
             $val = $2;
-            if ($var eq 'hostname'  ||  $var eq 'host') 
+            if ($var eq 'hostname') 
                 { $hash->{'host'} = $val; } 
             elsif ($var eq 'db'  ||  $var eq 'dbname') 
                 { $hash->{'database'} = $val; } 
@@ -88,16 +88,8 @@ sub _OdbcParse($$$)
             }
         }
     }
+    $hash->{host} = "$hash->{host}/$hash->{port}" if ($hash->{host} && $hash->{port});
     $hash->{database} = "$hash->{host}:$hash->{database}" if $hash->{host};
-}
-
-
-sub _OdbcParseHost ($$) 
-{
-    my($class, $dsn) = @_;
-    my($hash) = {};
-    $class->_OdbcParse($dsn, $hash, ['host', 'port']);
-    ($hash->{'host'}, $hash->{'port'});
 }
 
 
@@ -330,6 +322,7 @@ possible parameters:
    $dsn =<< "DSN";
  dbi:InterBase:dbname=$dbname;
  host=$host;
+ port=$port;
  ib_dialect=$dialect;
  ib_role=$role;
  ib_charset=$charset;
@@ -349,6 +342,7 @@ respective meanings:
     dbname      path to the database
     db          path to the database
     host        hostname (not IP address)           optional
+    port        port number                         optional
     ib_dialect  the SQL dialect to be used          optional
     ib_role     the role of the user                optional
     ib_charset  character set to be used            optional
@@ -1065,9 +1059,7 @@ an eval block.
 
 =over 4
 
-=item Linux, glibc-2.1.2, x86 egcs-1.1.2, kernel 2.2.12-20. 
-
-=item Linux, glibc-2.2.3, x86 gcc-2.95.3, kernel 2.4.18. 
+=item Linux
 
 =item FreeBSD
 
@@ -1085,7 +1077,9 @@ an eval block.
 
 =item InterBase 6.0/6.01 for Windows, FreeBSD, SPARC Solaris
 
-=item FireBird 1.0 Final SS for Windows, Linux
+=item Firebird 1.0 Final SS for Windows, Linux, SPARC Solaris
+
+=item Firebird 1.5 RC7 for Windows, Linux
 
 =back
 
@@ -1121,8 +1115,8 @@ DBI(3).
 
 =head1 COPYRIGHT
 
-The DBD::InterBase module is Copyright (c) 1999-2002 Edwin Pratomo.
-Portions Copyright (c) 2001-2002  Daniel Ritz.
+The DBD::InterBase module is Copyright (c) 1999-2003 Edwin Pratomo.
+Portions Copyright (c) 2001-2003  Daniel Ritz.
 
 The DBD::InterBase module is free software. 
 You may distribute under the terms of either the GNU General Public

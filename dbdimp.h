@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.46 2003/03/05 18:13:52 danielritz Exp $
+   $Id: dbdimp.h,v 1.47 2003/11/16 18:12:12 danielritz Exp $
 
    Copyright (c) 1999-2002  Edwin Pratomo
    Portions Copyright (c) 2001-2002  Daniel Ritz
@@ -70,7 +70,7 @@ static const int DBI_SQL_BLOB       = SQL_BLOB;
 /* defines */
 
 /* is IB v6 API present? */
-#ifdef _ISC_TIMESTAMP_
+#if defined(_ISC_TIMESTAMP_) || defined(ISC_TIMESTAMP_DEFINED)
 #  define IB_API_V6
 #endif
 
@@ -239,11 +239,12 @@ struct imp_sth_st
 };
 
 
-typedef struct vary
+/* newer header file defines the struct already */
+typedef struct dbd_vary
 {
     short vary_length;
     char  vary_string [1];
-} VARY;
+} DBD_VARY;
 
 
 /* These defines avoid name clashes for multiple statically linked DBD's */

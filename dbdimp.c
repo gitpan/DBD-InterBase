@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.c,v 1.97 2002/09/10 13:30:07 danielritz Exp $
+   $Id: dbdimp.c,v 1.102 2003/11/21 20:45:50 danielritz Exp $
 
    Copyright (c) 1999-2002  Edwin Pratomo
    Portions Copyright (c) 2001-2002  Daniel Ritz
@@ -261,7 +261,6 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     char ISC_FAR *user;
     char ISC_FAR *password;
     char ISC_FAR *database;
-    char ISC_FAR *host;
 
     STRLEN len; /* for SvPV */
 
@@ -317,16 +316,6 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     hv = (HV*) SvRV(sv);
     if (SvTYPE(hv) != SVt_PVHV)
         return FALSE;
-
-    /* host name */
-    if ((svp = hv_fetch(hv, "host", 4, FALSE)))
-    {
-        host = SvPV(*svp, len);
-        if (!len) host = NULL;
-        buflen += len; /* len of the string */
-    }
-    else host = NULL;
-    buflen += 2; /* attribute byte + string len */
 
     if ((svp = hv_fetch(hv, "user", 4, FALSE)))
     {
@@ -1396,7 +1385,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
 
                 case SQL_VARYING:
                 {
-                    VARY *vary = (VARY *) var->sqldata;
+                    DBD_VARY *vary = (DBD_VARY *) var->sqldata;
                     sv_setpvn(sv, vary->vary_string, vary->vary_length);
                     /* Note that sqllen for VARCHARs is the max length */
                     break;
@@ -2215,18 +2204,38 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         /**********************************************************************/
         case SQL_VARYING:
             DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_VARYING\n"));
-
+        {
+            char buf[25]; /* long long can have max 20 chars. */
+            char *tmp;
             if (ivar->sqldata == (char *) NULL)
             {
                 if ((ivar->sqldata = (char *)safemalloc(
                     sizeof(char) * (ivar->sqllen + 1) + sizeof(short))) == NULL)
                 {
-                    do_error(sth, 2, "Cannot allocate buffer for TEXT input parameter \n");
+                    do_error(sth, 2, "Cannot allocate buffer for VARCHAR input parameter \n");
                     retval = FALSE;
                     break;
                 }
             }
-            len = SvCUR(value);
+            if (SvIOK(value)) {
+                tmp = buf;
+                len = sprintf(tmp, "%d", SvIV(value));
+            }
+            else if (SvNOK(value)) {
+                tmp = buf;
+                len = sprintf(tmp, "%ld", SvNV(value));
+            }
+            else if (SvPOK(value)) {
+                len = SvCUR(value);
+                tmp = SvPV_nolen(value);
+            }
+            else {
+                /* error */
+                do_error(sth, 2, "Cannot cast to VARCHAR input parameter\n");
+                retval = FALSE;
+                break;
+            }
+
             /* The first word of VARCHAR sqldata is the length */
              *((short *) ivar->sqldata) = len;
             /* is the scalar longer than the database field? */
@@ -2238,21 +2247,22 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                         len, (sizeof(char) * (ivar->sqllen + 1)));
                 do_error(sth, 2, err);
                 retval = FALSE;
-                break;
             }
             else
             {
-                memcpy(ivar->sqldata + sizeof(short), (char *)SvPV_nolen(value), len);
+                memcpy(ivar->sqldata + sizeof(short), tmp, len);
                 ivar->sqldata[len + sizeof(short)] = '\0';
             }
 
             break;
-
+        }
         /**********************************************************************/
         case SQL_TEXT:
             DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_TEXT\n"));
+        {
+            char buf[25]; /* long long can have max 20 chars. */
+            char *tmp;
 
-            len = SvCUR(value);
             if (ivar->sqldata == (char *) NULL)
             {
                 if ((ivar->sqldata = (char *)
@@ -2260,8 +2270,27 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 {
                     do_error(sth, 2, "Cannot allocate buffer for TEXT input parameter \n");
                     retval = FALSE;
+                    safefree(tmp);
                     break;
                 }
+            }
+            if (SvIOK(value)) {
+                tmp = buf;
+                len = sprintf(tmp, "%d", SvIV(value));
+            }
+            else if (SvNOK(value)) {
+                tmp = buf;
+                len = sprintf(tmp, "%ld", SvNV(value));
+            }
+            else if (SvPOK(value)) {
+                len = SvCUR(value);
+                tmp = SvPV_nolen(value);
+            }
+            else {
+                /* error */
+                do_error(sth, 2, "Cannot cast to TEXT input parameter\n");
+                retval = FALSE;
+                break;
             }
 
             /* is the scalar longer than the database field? */
@@ -2277,10 +2306,11 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
             else
             {
                 memset(ivar->sqldata, ' ', ivar->sqllen);
-                memcpy(ivar->sqldata, SvPV_nolen(value), len);
+                memcpy(ivar->sqldata, tmp, len);
             }
-            break;
 
+            break;
+        }
 
         /**********************************************************************/
         case SQL_SHORT:

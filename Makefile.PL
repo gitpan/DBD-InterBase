@@ -1,8 +1,8 @@
 
-#   $Id: Makefile.PL,v 1.23 2002/08/12 16:04:26 danielritz Exp $
+#   $Id: Makefile.PL,v 1.28 2003/11/22 03:12:11 edpratomo Exp $
 #
-#   Copyright (c) 1999-2002 Edwin Pratomo
-#   Portions Copyright (c) 2001-2002  Daniel Ritz
+#   Copyright (c) 1999-2003 Edwin Pratomo
+#   Portions Copyright (c) 2001-2003 Daniel Ritz
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -52,21 +52,24 @@ if ($Config::Config{osname} eq 'MSWin32')
         Win32::TieRegistry->import('$Registry');
         $Registry->Delimiter("/");
 
-        my $sw = $Registry->{"LMachine/Software/"};
-
+        my $sw = $Registry->{"LMachine/Software/"} or die "Can't read LMachine/Software key: $^E\n";
         # We have to check more than one keys, because different
         # releases of InterBase have used different key hierarchies.
 
         my $key = $sw->{"InterBase Corp/InterBase/CurrentVersion/"} ||
               $sw->{"Borland/InterBase/CurrentVersion/"} ||
+              $sw->{"Firebird Project/Firebird Server/Instances/"} ||
               $sw->{"FirebirdSQL/Firebird/CurrentVersion/"};
 
         if (defined($key))
         {
             $ib_bin_dir = $key->{"/ServerDirectory"};
+            $ib_bin_dir ||= $key->{"/DefaultInstance"} . "bin";
             $ib_lib_dir = $key->{"/RootDirectory"};
+            $ib_lib_dir ||= $key->{"/DefaultInstance"};
         }
     };
+    die "Error: $@\n" if $@;
 
     $ib_lib_dir .= '\\' unless ($ib_lib_dir =~ m|^.*\\$|gi);
 
@@ -76,8 +79,8 @@ if ($Config::Config{osname} eq 'MSWin32')
 else
 {
     $isql_name = 'isql';
-    @ib_bin_dirs = (qw(/usr/interbase/bin /opt/interbase/bin /usr/bin /usr/local/bin));
-    @ib_inc_dirs = (qw(/usr/interbase/include /opt/interbase/include /usr/include));
+    @ib_bin_dirs = (qw(/usr/interbase/bin /opt/interbase/bin /opt/firebird/bin /usr/bin /usr/local/bin));
+    @ib_inc_dirs = (qw(/usr/interbase/include /opt/interbase/include /opt/firebird/include /usr/include));
 }
 
 sub locate_dbi_arch_dir {
@@ -152,36 +155,64 @@ sub make_test_conf
     }
 
     # ask for database path
-    for (1..3)
-    {
-        $path = prompt("\nFull path to your test database :", $path);
-        last if $path;
-    }
+    DBPATH: {
+        for (1..3) {
+            last if $path = prompt("\nFull path to your test database :", $path);
+        }
+        die "Must specify a test database" unless $path;
 
-    die "Must specify a test database" unless $path;
-
-    #PFW - isql on windows doesn't seem to work without the localhost in the db path
-    my $hostpath = $path;
-    if ($path =~ /^localhost:(.+)/) {
-        $hostpath = $1;
-    }
-    # if DB doesn't exist ask for creation
-    unless (-f $hostpath)
-    {
-        print <<"EOM";
-Cannot find $path
+        #PFW - isql on windows doesn't seem to work without the localhost in the db path
+        my $hostpath = $path;
+        if ($path =~ /^localhost:(.+)/) {
+            $hostpath = $1;
+        }
+        # if DB doesn't exist ask for creation
+        unless (-f $hostpath)
+        {
+            print <<"EOM";
+$path doesn't exist. 
 Trying to create the test database..
 Please enter a username with CREATE DATABASE permission.
 EOM
+            $user = prompt("Username :", $user);
+            $pass = prompt("Password :", $pass);
+            create_test_db($path, $user, $pass);
+            last DBPATH;
+        }
+        else
+        {
+            print <<"EOM";
+$path exists.
+Trying to use an existing database..
+Please enter a username to connect.
+EOM
+            $user = prompt("Username :", $user);
+            $pass = prompt("Password :", $pass);
 
-        $user = prompt("Username :", $user);
-        $pass = prompt("Password :", $pass);
-        create_test_db($path, $user, $pass);
-    }
-    else
-    {
-        $user = prompt("Username :", $user);
-        $pass = prompt("Password :", $pass);
+            # check dialect
+            my $dialect;
+            my $gstat = $IB_Bin_path . "/" . test_files($IB_Bin_path, [qw(gstat gstat.exe)]);
+            local *GSTAT;
+            open GSTAT, "$gstat -user $user -password $pass -h $path |" or die "Can't execute $gstat: $!";
+            while (<GSTAT>) { ($dialect) = $_ =~ /dialect\s+(\d)/i and last }
+
+            unless (defined $dialect) {
+                print <<"EOM";
+Dialect of $path is UNKNOWN.
+This test requires a database of dialect 3. You may specify a non-existent database to create a new one.
+EOM
+                my $is_proceed = prompt("Proceed anyway or create a NEW test database (P/N)?", "P");
+                last DBPATH if $is_proceed =~ /P/i;
+                $hostpath = $path = undef, goto DBPATH;
+            }
+            unless ($dialect == 3) {
+                print <<"EOM";
+The dialect of $path is: $dialect !!.
+This test requires a database of dialect 3. Please specify a non-existent database to create a new one.
+EOM
+                $hostpath = $path = undef, goto DBPATH;
+            }
+        }
     }
 
     # save test config to file
@@ -252,7 +283,7 @@ sub create_test_db
     }
 
     # try to execute isql and create the test database
-    system($isql, '-i', './t/create.sql') == 0
+    system($isql, '-sql_dialect', 3, '-i', './t/create.sql') == 0
     or die "Fail calling $isql -i t/create/sql: $?";
 }
 
@@ -264,11 +295,11 @@ sub create_test_db
 # the contents of the Makefile that is written.
 
 # prompt for InterBase bin directory
-$IB_Bin_path = dir_choice("InterBase bin directory", [@ib_bin_dirs], [qw(gfix gfix.exe)]);
+$IB_Bin_path = dir_choice("InterBase/Firebird bin directory", [@ib_bin_dirs], [qw(gfix gfix.exe)]);
 
 unless(-x $IB_Bin_path)
 {
-    carp "I cannot find your InterBase installation.\nDBD::InterBase cannot build or run without InterBase.\n";
+    carp "I cannot find your InterBase/Firebird installation.\nDBD::InterBase cannot build or run without InterBase.\n";
     exit 1;
 }
 
@@ -280,7 +311,7 @@ $IBVERSION =~ s/^gfix version //o;
 my $is_final = $IBVERSION =~ /\.6\d+$/ ? 1 : 0;
 
 # prompt for IB include dir
-my $ib_inc = dir_choice("InterBase include directory", [@ib_inc_dirs], [qw(gds.h ibase.h)]);
+my $ib_inc = dir_choice("InterBase/Firebird include directory", [@ib_inc_dirs], [qw(gds.h ibase.h)]);
 
 
 # we use a hash for the MakeMaker parameters
@@ -350,15 +381,21 @@ if ($os eq 'MSWin32')
 
         my $ib_lib = dir_choice("InterBase lib directory", 
                             [$ib_lib_dir . "SDK\\lib_ms", $ib_lib_dir . "lib"],
-                            [qw(gds32_ms.lib)]);
+                            [qw(gds32_ms.lib fbclient_ms.lib)]);
 
         my $cur_libs = $Config::Config{'libs'} ;
         my $cur_lddlflags = $Config::Config{'lddlflags'} ;
 
+        my $lib;
+        if (-f "$ib_lib/fbclient_ms.lib")
+            { $lib = "$ib_lib/fbclient_ms.lib"; }
+        else
+            { $lib = "$ib_lib/gds32_ms.lib"; }
+
         eval "
     sub MY::const_loadlibs {
     '
-LDLOADLIBS = \"$ib_lib/gds32_ms.lib\" $cur_libs
+LDLOADLIBS = \"$lib\" $cur_libs
 LDDLFLAGS = /LIBPATH:\"$vc_lib\" $cur_lddlflags
     '
     } ";
@@ -407,11 +444,30 @@ elsif ($os eq 'linux')
     # This is for both:
     # o Free IB 4.0 for Red Hat Linux 4.2
     # o Commercial IB 5.1.1 for Red Hat Linux 5.1
-    my $ib_lib = dir_choice("InterBase lib directory",
+    my $ib_lib = dir_choice("InterBase/Firebird lib directory",
     [qw(/usr/interbase/lib /opt/interbase/lib /usr/lib /usr/local/lib)],
-    [qw(libgds.a libgds.so)]);
+    [qw(libgds.a libgds.so libfbclient.so libfbembed.so)]);
+    my $lib;
 
-    $MakeParams{'LIBS'} = "-L$ib_lib -lgds -ldl ";
+    if (-f "$ib_lib/libfbclient.so")
+    {
+         my $emb = 0;
+
+         if (-f "$ib_lib/libfbembed.so")
+         {
+             while ($emb ne 'n' && $emb ne 'y')
+                 { $emb = prompt("Build with libfbembed? (y/n)", 'n'); }
+         }
+
+         if ($emb eq 'y')
+             { $lib = 'fbembed'; }
+         else
+             { $lib = 'fbclient'; }
+    }
+    else
+         { $lib = 'gds'; }
+
+    $MakeParams{'LIBS'} = "-L$ib_lib -l$lib -ldl ";
 
     # o Commercial IB 5.1.1 for Red Hat Linux 6.x
     #   requires a compatibilty library to resolve
