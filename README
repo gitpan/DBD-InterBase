@@ -1,6 +1,6 @@
 DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
-   $Id: README,v 1.4 2001/03/24 13:26:42 edpratomo Exp $
+   $Id: README,v 1.6 2001/06/12 17:42:35 edpratomo Exp $
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -11,23 +11,49 @@ DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
    WARNING: THIS IS MOSTLY ALPHA SOFTWARE. Your mileage may vary.
 
+REQUIREMENTS:
+  - Perl 5.004 installed
+  - Perl DBI (0.93 and higher)
+  - InterBase
+  - A C compiler
+    * UN*X
+      GCC 2.95.2 or other capable
+
+    * Windows
+      - Borland C++ 5.5 under Windows (tested by Daniel Ritz)
+        You can donwload a free copy of BCC55 at
+          ftp://ftpd.borland.com/download/bcppbuilder/freecommandLinetools.exe
+
+        In order to compile with Borland compiler you need dmake or pmake:
+          http://www.cpan.org/authors/id/GSAR/dmake-4.1pl1-win32.zip
+          http://www.cpan.org/authors/id/NI-S/Make-1.00.tar.gz
+
+      - or Microsoft VC++ 6.0 (tested by Edwin Pratomo)
+
+
 *BEFORE* BUILDING, TESTING AND INSTALLING this you will need to:
 
-    Build, test and install Perl 5 (at least 5.004).
+  - Build, test and install Perl 5 (at least 5.004).
     It is very important to TEST it and INSTALL it!
 
-    Build, test and install the DBI module (at least DBI 0.93).
+  - Build, test and install the DBI module (at least DBI 0.93).
     It is very important to TEST it and INSTALL it!
 
-    Remember to *read* the DBI README file!
+  - Remember to *read* the DBI README file!
+
+  - Make sure that InterBase server is running (for testing)
+
 
 BUILDING:
+  Win32 additional steps if you are using the Borland C++ compiler:
+    perl PatchBCC
 
-  perl Makefile.PL
-  make
+  To Configure and build the DBD:
+    perl Makefile.PL
+    make
 
 TESTING
-  
+
   make test
   make install               (if the tests look okay)
 

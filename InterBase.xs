@@ -1,5 +1,5 @@
 /* 
-   $Id: InterBase.xs,v 1.10 2001/03/20 08:38:42 edpratomo Exp $ 
+   $Id: InterBase.xs,v 1.14 2001/06/07 11:26:08 edpratomo Exp $ 
 
    Copyright (c) 1999-2001  Edwin Pratomo
 

@@ -9,6 +9,7 @@ Makefile.PL
 README
 dbdimp.c
 dbdimp.h
+PatchBCC
 t/00base.t
 t/10dsnlist.t
 t/20createdrop.t

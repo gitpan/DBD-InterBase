@@ -1,4 +1,4 @@
-### $Id: FAQ.pm,v 1.2 2001/04/27 16:19:20 edpratomo Exp $
+### $Id: FAQ.pm,v 1.4 2001/06/13 13:31:07 edpratomo Exp $
 ### DBD::InterBase Frequently Asked Questions POD
 ### 
 ### This document is Copyright (c)2000 Edwin Pratomo. All rights reserved.
@@ -28,7 +28,7 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.27 available in CPAN.
+C<DBD::InterBase> version 0.28 available in CPAN.
 
 =head1 SQL Operations
 
@@ -61,6 +61,24 @@ AutoCommit on, you can put the snippet within a block:
  {
      $dbh->{AutoCommit} = 0;
      # same actions like above ....
+     $dbh->commit;
+ }
+
+=head2 Nested statement handles break under AutoCommit mode. Any workaround?
+
+The explanation behind this is the same as above. The workaround is also
+much alike:
+
+ {
+     $dbh->{AutoCommit} = 0;
+     $sth1 = $dbh->prepare("SELECT * FROM $table");
+     $sth2 = $dbh->prepare("SELECT * FROM $table WHERE id = ?");
+     $sth1->execute;
+
+     while ($row = $sth1->fetchrow_arrayref) {
+        $sth2->execute($row->[0]);
+        $res = $sth2->fetchall_arrayref;
+     }
      $dbh->commit;
  }
 

@@ -1,5 +1,5 @@
 
-#   $Id: InterBase.pm,v 1.20 2001/04/27 16:49:03 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.23 2001/06/13 13:31:53 edpratomo Exp $
 #
 #   Copyright (c) 1999-2001 Edwin Pratomo
 #
@@ -20,7 +20,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.27';
+$VERSION = '0.28';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -357,15 +357,13 @@ controls how InterBase interprets:
  - new 6.0 reserved keywords
 
 Valid values for B<ib_dialect> are 1, 2, and 3. The driver's default value is
-1. For more detail reading on this topic, please refer to:
-
- http://www.interbase.com/open/research/art_60dialects.html
+1. 
 
 B<ib_role> specifies the role of the connecting user. B<SQL role> is
 implemented by InterBase to make database administration easier when dealing
 with lots of users. A detailed reading can be found at:
 
- http://www.interbase.com/downloads/sqlroles.pdf
+ http://www.ibphoenix.com/ibp_sqlroles.html
 
 If B<ib_cache> is not specified, the default database's cache size value will be 
 used. The InterBase Operations Guide discusses in full length the importance of 
@@ -798,9 +796,7 @@ start a new transaction. A disconnect will issue a rollback.
 InterBase provides fine control over transaction behavior, where users can
 specify the access mode, the isolation level, the lock resolution, and the 
 table reservation (for a specified table). For this purpose,
-C<set_tx_param()> database handle method is available. Please notice that
-this private method is new and considered B<experimental> at this release.
-Use with caution!
+C<set_tx_param()> database handle method is available. 
 
 Upon a successful C<connect()>, these default parameter values will be used
 for every SQL operation:
@@ -920,11 +916,12 @@ an eval block.
 Partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
 DBD::mysql, and Edmund Mergl's DBD::Pg.
 
-Daniel Ritz <daniel_ritz@gmx.ch> works on SPARC Solaris port.
+Daniel Ritz <daniel_ritz@gmx.ch> works on SPARC Solaris and Win32 ports.
 
 =head1 BUGS
 
-Known problem with BLOB fields on Win32 platform.
+Uses of nested statement handles break under AutoCommit mode. As the
+workaround, try to turn off AutoCommit attribute inside a block. 
 
 =head1 SEE ALSO
 

@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.13 2001/04/19 15:06:53 edpratomo Exp $
+   $Id: dbdimp.h,v 1.17 2001/06/07 11:44:33 edpratomo Exp $
 
    Copyright (c) 1999-2001  Edwin Pratomo
 

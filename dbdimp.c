@@ -1,5 +1,5 @@
 /* 
-   $Id: dbdimp.c,v 1.27 2001/05/02 00:16:51 edpratomo Exp $ 
+   $Id: dbdimp.c,v 1.39 2001/06/11 13:09:04 danielritz Exp $ 
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -2100,7 +2100,12 @@ int ib_blob_write (SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
 }
 
 /* fill in_sqlda with bind parameters */
-static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV sql_type)
+static int ib_fill_isqlda(
+	SV *sth, 
+	imp_sth_t *imp_sth, 
+	SV *param, 
+	SV *value, 
+	IV sql_type)
 {
     D_imp_dbh_from_sth;
     STRLEN len;
@@ -2147,10 +2152,6 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         safefree(ivar->sqldata);
         ivar->sqldata = (char *)NULL;
     }
-    
-    if (dbis->debug >= 3) 
-        PerlIO_printf(DBILOGFP, 
-        "ib_fill_isqlda: sqlind: %d\n", *(ivar->sqlind));
 
     if (dbis->debug >= 3) 
         PerlIO_printf(DBILOGFP, "ib_fill_isqlda\n");
@@ -2186,9 +2187,15 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         }
     }
 
+    /* workaround for date problem (bug #429820) */
+    if (((ivar->sqltype & ~1) == SQL_TEXT) && (ivar->sqlsubtype == 0 - SQL_TIMESTAMP))
+       ivar->sqltype = SQL_TIMESTAMP | (ivar->sqltype&1);
+
     switch (ivar->sqltype & ~1)
     {
     case SQL_VARYING:
+	    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_VARYING\n");
 
         if ( ivar->sqldata == (char *) NULL )
         {
@@ -2220,6 +2227,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         break;
 
     case SQL_TEXT:
+	    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_TEXT\n");
+
         len = SvCUR(value);
         if ( ivar->sqldata == (char *) NULL )
         {
@@ -2246,20 +2256,19 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         } else {
             memset(ivar->sqldata, ' ', ivar->sqllen);
             memcpy(ivar->sqldata, SvPV_nolen(value), len);
-/* problem on some system:
-            if (dbis->debug >= 3) 
-                dump_str(ivar->sqldata, ivar->sqllen);
-*/
         }
 /* XXX Is this necessary? */
 /*      ivar->sqldata[len] = '\0'; */
         break;
 
     case SQL_SHORT:
+	    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_SHORT\n");
+
     {
         int scale = (int) (pow(10.0, (double) -ivar->sqlscale));
         char format[64];
-        short p, q, r;
+        int p, q, r; /* must be int 'cos of sscanf !! */
 
         if ( (ivar->sqldata == (char *) NULL) &&
             ((ivar->sqldata = (char *) safemalloc(sizeof(short))) == NULL))
@@ -2271,8 +2280,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
 
         /* See case SQL_INT64 for commentary. */
         sprintf(format, "%%d.%%%dd%%1d", -ivar->sqlscale);
-        p = q = r = (short) 0;
+        p = q = r = 0;
         sscanf((char*)SvPV_nolen(value), format, &p, &q, &r);
+
         if (r >= 5)
         {
             q++;
@@ -2281,10 +2291,14 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         }
 
         *(short *) (ivar->sqldata) = (short) (p * scale + q);
+
         break;
     }
 
     case SQL_LONG:
+	    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_LONG\n");
+
     {
         int scale = (int) (pow(10.0, (double) -ivar->sqlscale));
         char format[64];
@@ -2315,6 +2329,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
 
 #ifdef SQL_INT64
     case SQL_INT64:
+	    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_INT64\n");
+
     {
         int scale = (int) (pow(10.0, (double) -ivar->sqlscale));
         char format[64];
@@ -2367,6 +2384,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
 #endif
 
     case SQL_FLOAT:
+        if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_FLOAT\n");
+
         if ( (ivar->sqldata == (char *) NULL) &&
         ((ivar->sqldata = (char *) safemalloc(sizeof(float))) == NULL))
         {
@@ -2378,6 +2398,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         break;
 
     case SQL_DOUBLE:
+    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_DOUBLE\n");
+
         if ( (ivar->sqldata == (char *) NULL) &&
         ((ivar->sqldata = (char *) safemalloc(sizeof(double))) == NULL))
         {
@@ -2395,6 +2418,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
     case SQL_TYPE_TIME: /* V6.0 macro */
     case SQL_TYPE_DATE: /* V6.0 macro */
 #endif
+
+    if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_TIMESTAMP\n");
         /*
          * Coerce the date literal into a CHAR string, so as
          * to allow InterBase's internal date-string parsing
@@ -2405,6 +2431,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
             char *datestring = SvPV(value, len);
 
             ivar->sqltype = SQL_TEXT | (ivar->sqltype&1);
+            ivar->sqlsubtype = 0 - SQL_TIMESTAMP; /* workaround for date problem (bug #429820) */
 
             ivar->sqllen = len;
             if ( ivar->sqldata == (char *) NULL)
@@ -2423,6 +2450,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
             }
             memcpy(ivar->sqldata, datestring, len);
             ivar->sqldata[len] = '\0';
+
         }
         else if (SvROK(value))
         {
@@ -2439,6 +2467,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
         break;
 
     case SQL_BLOB:
+        if (dbis->debug >= 1) 
+    	    PerlIO_printf(DBILOGFP, "ib_fill_isqlda: SQL_BLOB\n");
+
     {
         isc_blob_handle blob_handle = NULL;
         ISC_QUAD blob_id;
@@ -2462,6 +2493,15 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
             goto end;
         }
 
+	    if (DBIc_has(imp_dbh, DBIcf_AutoCommit)) {
+    	    if (!imp_dbh->tr) {
+        	    if (!ib_start_transaction(sth, imp_dbh, NULL, 0)) {
+            	    retval = FALSE;
+            	    goto end;
+            	}
+        	}
+    	} 
+
         isc_create_blob(
             status,
             &(imp_dbh->db),
@@ -2475,6 +2515,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
             retval = FALSE;
             goto end;
         }   
+
         t = total_length;
         p = (char*)SvPV_nolen(value);
         
@@ -2546,6 +2587,9 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
     }
 
     end:
+    if (dbis->debug >= 3) 
+       PerlIO_printf(DBILOGFP, "exiting ib_fill_isqlda: %d\n", retval);
+
     return retval;
 }
 

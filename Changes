@@ -3,11 +3,19 @@ Revision history for Perl extension DBD::InterBase.
 0.01  Wed Apr 26 16:45:07 2000
 	- original version; created by h2xs 1.19
 
+June 12 2001
+* Fixed to buffer overflow in ib_fill_isqlda, by danielritz.
+* Fixed to problem with DATE and TIMESTAMP fields, by danielritz.
+
+June 7 2001
+* Added PatchBCC by danielritz
+* Fixed problem with repeatable use with blob field.
+
 May 2 2001
 * Fixed memory leak in bind param.
 
 April 19 2001
-* Fix to dbdimp.h by Daniel Ritz. 
+* Fix to dbdimp.h by danielritz. 
 * Nullify var->sqldata and tpb_buffer when cleaning up. 
 
 April 18 2001
