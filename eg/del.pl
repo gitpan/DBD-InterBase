@@ -6,17 +6,15 @@ use DBI;
 
 $dbpath = 'test.gdb';
 #DBI->trace(2, "./del.trace");
-$dbh = DBI->connect("dbi:InterBase:database=$dbpath",'','',{AutoCommit => 0}) 
-    or die $DBI::errstr;
+$dbh = DBI->connect("dbi:InterBase:database=$dbpath;ib_dialect=3",'','',
+	{AutoCommit => 0}) or die $DBI::errstr;
 
-$sql = 'delete from SIMPLE where person_id = ?';
+$sql = 'DELETE FROM SIMPLE';
 $cursor = $dbh->prepare($sql) or die $dbh->errstr;
 
 print "Deleting records...\n";
-for (1..6)
-{
-    $cursor->execute($_) or die $dbh->errstr;
-}
+$cursor->execute or die $dbh->errstr;
+
 print "Finished.\n";
 $dbh->commit;
 $dbh->disconnect or warn $dbh->errstr;

@@ -5,7 +5,8 @@ use blib;
 use DBI;
 
 $dbpath = 'test.gdb';
-$dbh = DBI->connect("dbi:InterBase:database=$dbpath") or die $DBI::errstr;
+$dbh = DBI->connect("dbi:InterBase:database=$dbpath;ib_dialect=3") 
+	or die $DBI::errstr;
 
 $stmt = "SELECT * FROM SIMPLE ORDER BY PERSON_ID";
 

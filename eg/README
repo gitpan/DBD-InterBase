@@ -3,7 +3,7 @@ example scripts in this directory. The database should contains an empty table
 SIMPLE.
 You can use create.sql script to create it (run it from eg directory):
 
-$ /path/to/your/isql < create.sql
+$ /path/to/your/isql -i create.sql
 
 1. insert.pl - insert some records into table SIMPLE
    using: prepare,

@@ -5,7 +5,7 @@ SYNOPSIS
       use DBI;
       
       $dbpath = '/home/edwin/perl_example.gdb';
-      $dsn = "DBI:InterBase:database=$dbpath;host=puskom-4";
+      $dsn = "DBI:InterBase:database=$dbpath;host=puskom-4;ib_dialect=3";
 
       $dbh = DBI->connect($dsn, '', '', {AutoCommit => 0}) 
         or die "$DBI::errstr";
@@ -29,22 +29,23 @@ SYNOPSIS
 DESCRIPTION
     This DBI driver currently is a wrapper around IBPerl, written in
     pure perl. It is based on the DBI 1.13 specification dan IBPerl
-    0.7. This module should obsoletes the DBIx::IB.
+    0.8p2.
 
     Connecting with InterBase-specific optional parameters
 
-    InterBase allows you to connect with specifiying Role, Protocol,
-    Cache, and Charset. These parameters can be passed to InterBase
-    via $dsn of DBI connect method. Eg:
+    InterBase allows you to connect with specifiying ib_role,
+    ib_protocol, ib_cache, ib_charset, ib_separator, ib_dateformat,
+    and ib_dialect. These parameters can be passed to InterBase via
+    $dsn of DBI connect method. Eg:
 
-      $dsn = 'dbi:InterBase:database=/path/to/data.gdb;charset=ISO8859_1';
+      $dsn = 'dbi:InterBase:database=/path/to/data.gdb;ib_dialect=3';
 
 PREREQUISITE
     * InterBase client
       Available at http://www.interbase.com/,
 
-    * IBPerl 0.7, by Bill Karwin
-      Don't worry, it is included in this distribution.
+    * IBPerl 0.8 patch 2, by Bill Karwin
+      Available at http://www.karwin.com/ibperl/
 
 INSTALLATION
     Run:
@@ -71,10 +72,8 @@ WARNING
     * $dbh->do() doesn't return number of records affected
     * $sth->execute() doesn't return number of records
 TESTED PLATFORMS
-    This module has been tested on Linux (2.0.33, 2.0.34), IBPerl
-    0.7, Perl 5.004_04, to access InterBase 4.0 for Linux, and
-    InterBase 5.5 for NT. It has also been used under mod_perl and
-    Apache::DBI with no problems reported (yet).
+    This module has been tested on Linux (2.2.12-20), IBPerl 0.8p2,
+    Perl 5.005_03, to access InterBase SuperServer 6.0 for Linux.
 
 KNOWN BUGS
     This sequence won't work:
@@ -88,12 +87,30 @@ KNOWN BUGS
     examples in eg/ibperl directory.
 
 BUG REPORTS
-    Please send any bug report to dbi-users mailing list
+    Please send any bug report and patches to dbi-users mailing list
     (http://www.isc.org/dbi-lists.html) Any bug report should be
     accompanied with the script that got the problem, and the output
     of DBI trace method.
 
 HISTORY
+    Version 0.1, June 28, 2000
+
+    Several connect() attributes specific to InterBase now use ib_
+    prefix: ib_protocol, ib_role, ib_charset, ib_charset, and
+    ib_cache.
+
+    Several bug fixes and features addition:
+
+    * `Separator' and `DateFormat' are obsolete. Use `ib_separator' and
+    `ib_dateformat' instead.
+    * `ib_dialect' attribute in `connect()' method.
+    * `set_err' in `connect()', by Mark D. Anderson
+    <*mda@discerning.com*>,
+    * `tables()' method, by Michael Arnett <*marnett@mediaone.net*>,
+    * `ping()' method, by Flemming Frandsen <*dion@swamp.dk*>, 
+    and Mike Shoyher <*msh@e-labs.ru*>.
+    * AutoCommit=>0 causes segfault within mod_perl, by Mike Shoyher 
+    <*msh@e-labs.ru*>.
     Version 0.021, September 19, 1999
 
     Separator and DateFormat options works for prepare() and do().
