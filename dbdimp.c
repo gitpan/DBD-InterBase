@@ -1,5 +1,5 @@
 /* 
-   $Id: dbdimp.c,v 1.26 2001/04/19 14:39:25 edpratomo Exp $ 
+   $Id: dbdimp.c,v 1.27 2001/05/02 00:16:51 edpratomo Exp $ 
 
    Copyright (c) 1999-2001  Edwin Pratomo
 
@@ -2114,7 +2114,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
     
     if (dbis->debug >= 2) {
         PerlIO_printf(DBILOGFP, 
-        "enter ib_fill_isqlda. processing %d XSQLVAR\n", i);
+        "enter ib_fill_isqlda. processing %d XSQLVAR\n", i + 1);
         if (sql_type) 
             PerlIO_printf(DBILOGFP, "   Type %ld", (long)sql_type);
     }
@@ -2127,12 +2127,26 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value, IV 
      * NULL indicator
      */
 
+    if (ivar->sqlind) {
+        if (dbis->debug >= 3) 
+            PerlIO_printf(DBILOGFP, 
+            "ib_fill_isqlda: Freeing sqlind\n");
+        safefree(ivar->sqlind);
+    }
     ivar->sqlind = (short *) safemalloc(1);
 
     /* *(ivar->sqlind) = ivar->sqltype & 1 ? 0 : 1; */
 
     *(ivar->sqlind) = 0; /* default assume non-NULL */
-    ivar->sqldata = (char *)NULL;
+
+    if (ivar->sqldata) {
+        if (dbis->debug >= 3) 
+            PerlIO_printf(DBILOGFP, 
+            "ib_fill_isqlda: Freeing sqldata\n");
+
+        safefree(ivar->sqldata);
+        ivar->sqldata = (char *)NULL;
+    }
     
     if (dbis->debug >= 3) 
         PerlIO_printf(DBILOGFP, 

@@ -3,6 +3,9 @@ Revision history for Perl extension DBD::InterBase.
 0.01  Wed Apr 26 16:45:07 2000
 	- original version; created by h2xs 1.19
 
+May 2 2001
+* Fixed memory leak in bind param.
+
 April 19 2001
 * Fix to dbdimp.h by Daniel Ritz. 
 * Nullify var->sqldata and tpb_buffer when cleaning up. 

@@ -30,7 +30,6 @@ t/InterBase.mtest
 t/README
 t/ak-dbd.t
 t/akmisc.t
-t/create.sql
 t/dbdadmin.t
 t/lib.pl
 t/skeleton.test

@@ -1,6 +1,6 @@
 package Bundle::DBD::InterBase;
 
-$VERSION = '0.26';
+$VERSION = '0.27';
 
 1;
 

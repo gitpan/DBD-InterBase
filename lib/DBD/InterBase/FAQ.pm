@@ -28,7 +28,7 @@ perldoc DBD::InterBase::FAQ
 
 This document serves to answer the most frequently asked questions
 regarding the uses of C<DBD::InterBase>. Current version refers to
-C<DBD::InterBase> version 0.26 available in CPAN.
+C<DBD::InterBase> version 0.27 available in CPAN.
 
 =head1 SQL Operations
 
