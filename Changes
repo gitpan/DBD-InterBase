@@ -1,0 +1,62 @@
+Revision history for Perl extension DBD::InterBase.
+
+0.01  Wed Apr 26 16:45:07 2000
+	- original version; created by h2xs 1.19
+
+Aug 30 2000
+* Patch to DBI.pm of DBI-1.14, fixes a subtle bug of fetchall_arrayref().
+The patched DBI allows DBD::InterBase to work with DBIx::Tree 0.91. Cool!
+* Moving FAQ.pm to InterBase/FAQ.pm
+
+Aug 28 2000
+* $sth->{NAME} now return column alias, if any.
+
+Aug 22 2000
+* Fixed _OdbcParse() in InterBase.pm, to connect to remote host incl.
+Windows.
+
+Aug 19 2000
+* $sth->rows() now returns the number of fetched rows, for SELECT, otherwise
+returns - 1 (unknown).
+
+Aug 18 2000
+* starting a transaction (automatic or not) is more robust, now it reuses an
+active transaction handle, instead of overridding it with a new one, leaving
+the previous one "immortal" (because the previous transaction handle is no
+longer kept!)
+
+Aug 16 2000
+* Fix $dbh->do() method for usage with placeholders.
+* Added support for CursorName attrib
+* more robust commit with AutoCommit on
+
+Aug 13 2000
+* Added datatype values conversion routine between InterBase internal
+values and DBI/ISO/ANSI/ODBC values
+* Fixed tables() method, now correctly removes the trailing blank spaces
+* Tested to 100% compliant with DBIx::Recordset (0.21)!
+
+Aug 12 2000
+* more informative error message
+* fix ping() method. Now not die if RaiseError => 1
+
+July 29 2000
+* AutoCommit attribute handling:
+
+- in dbd_login6():
+simply turns on imp_dbh->init_commit = 1
+
+- in db_STORE_attrib() :
+if init_commit == 1:
+if AutoCommit turned On: do nothing.
+if AutoCommit turned Off: start a new default transaction, stored in
+imp_dbh->tr
+
+if init_commit == 0:
+if AutoCommit turned On: commit changes.
+if AutoCommit turned Off: start a new default transaction, stored in 
+imp_dbh->tr
+
+Before returning, init_commit is reset to 0.
+
+- 

@@ -1,187 +1,196 @@
-BEGIN {require 5.004;}
-use ExtUtils::MakeMaker qw(prompt WriteMakefile);
 
-my $dbname = prompt("Which database should I use for testing (Enter full " .
-                "path)", "./eg/test.gdb");
+BEGIN { $^W = 1 }
+BEGIN { require 5.003 }	# 5.003 fixes very important bugs
 
-my $host = prompt("On which host is InterBase running (hostname, don't"
-              . " enter ip address\n", "localhost");
+use ExtUtils::MakeMaker 5.16, qw(prompt &WriteMakefile $Verbose);
+use Config;
+use Carp;
 
-my($user, $pass);
-$user = prompt("User name for connecting to database $dbname?",
-               "SYSDBA");
-$pass = prompt("Password for connecting to database $dbname?",
-               "masterkey");
+# This DBI must be installed before we can build a DBD.
+# For those not using Dynamic loading this means building a
+# new static perl in the DBI directory by saying 'make perl'
+# and then using _that_ perl to make this one.
+use DBI 1.08;
+use DBI::DBD;	# DBD creation tools
 
-my $dsn = "dbi:InterBase:database=$dbname";
-$dsn .= $host ne 'localhost'? $host : '';
+my $dbi_arch_dir = dbd_dbi_arch_dir();
 
-open(TESTFILE, ">test.pl") or die "Can't create test.pl";
-print "Writing test file...\n";
-while(<DATA>)
+# See lib/ExtUtils/MakeMaker.pm for details of how to influence
+# the contents of the Makefile that is written.
+
+my $GFIX_PATH = '/usr/interbase/bin/gfix';
+if (! -f $GFIX_PATH)
 {
-    s#template_dsn#$dsn#mo;
-    s#template_db#$dbname#mo;
-    s#template_user#$user#mo;
-    s#template_pass#$pass#mo;
-    print TESTFILE;
+    $GFIX_PATH = '/opt/interbase/bin/gfix';
+    if (! -f $GFIX_PATH)
+    {
+    $GFIX_PATH = '/Progra~1/InterB~1/InterB~1/bin/gfix';
+    if (! -f $GFIX_PATH)
+    {
+	$GFIX_PATH = '/Progra~1/Borland/InterB~1/bin/gfix';
+	if (! -f $GFIX_PATH)
+	{
+	    carp "I cannot find your InterBase installation.\nDBD::InterBase cannot build or run without InterBase.\n";
+	    exit 1;
+	}
+    }
+	}
 }
-close TESTFILE;
+my $IBVERSION;
+chop($IBVERSION = `$GFIX_PATH -z 2>&1`);
+$IBVERSION =~ s/^gfix version //o;
+
+my $is_final = $IBVERSION =~ /\.6\d+$/ ? 1 : 0;
+my $ib_inc = ($is_final ? 
+	"/opt/interbase/include" : "/usr/interbase/include");
+$ib_inc = prompt("Where is your InterBase include directory?",
+	$ib_inc);
+
+my $INC = "-I$ib_inc" . " -I$dbi_arch_dir";
+my $LDDLFLAGS = '';
+my $LIBS = '';
+my $OPT = $Config::Config{'optimize'};
+
+my $CCFLAGS = '';
+
+my $os = $Config::Config{'osname'};
+
+if ($os eq 'MSWin32')
+{
+    # Why does software development on Windows
+    # have to be so difficult!?
+
+    # Rules for Microsoft Visual C++
+    if ($Config{'cc'} eq 'cl.exe') {
+	$CCFLAGS = '-O2 -MD -DNDEBUG -DWIN32 -D_CONSOLE -DNO_STRICT -DHAVE_DES_FCRYPT';
+	$LDFROM = '$(OBJECT) handles.obj util.obj';
+	$INC = "-I$Config::Config{'archlibexp'}/CORE -I\"C:/Program Files/InterBase Corp/InterBase/include\" -I\"C:/Program Files/DevStudio/Vc/include\"";
+	eval "
+sub MY::const_loadlibs
+{
+'
+LDLOADLIBS = gds32_ms.lib \$(LIBC)
+LDDLFLAGS = -nodefaultlib /LIBPATH:C:/Progra~1/InterB~1/InterB~1/lib /LIBPATH:C:/Perl/lib/CORE
+'
+}
+	";
+    }
+    # Rules for Borland C++
+    else
+    {
+	$CCFLAGS = '-a4';
+	$LDFROM = '$(OBJECT) handles.obj util.obj';
+	$INC = "-I$Config::Config{'archlibexp'}/CORE -I\"C:/Program Files/InterBase Corp/InterBase/include\" -I\"C:/Program Files/Borland/BC5/include\"";
+	eval "
+sub MY::const_loadlibs {
+'
+LDLOADLIBS = \$(LIBC) import32.lib gds32.lib
+LDDLFLAGS = -L\"C:/Progra~1/InterB~1/InterB~1/lib;C:/Progra~1/Borland/BC5/lib;C:/Perl/lib/CORE\"
+'
+}
+	";
+    }
+
+    # Will I need Cygwin rules too?
+}
+elsif ($os eq 'solaris')
+{
+    $LIBS = '-lgdsmt -lm -lc'; 
+}
+elsif ($os eq 'linux')
+{
+    # This is for both:
+    # o Free IB 4.0 for Red Hat Linux 4.2
+    # o Commercial IB 5.1.1 for Red Hat Linux 5.1
+	my $ib_lib = ($is_final ? '/usr/lib ' : '/usr/interbase/lib ');
+
+	$ib_lib = prompt("Where is your InterBase library directory?",
+		$ib_lib);
+
+    $LIBS = "-L$ib_lib" . '-lgds -ldl';
+
+    # o Commercial IB 5.1.1 for Red Hat Linux 6.x
+    #   requires a compatibilty library to resolve
+    #   symbols such as _xstat that were removed
+    #   from glibc 2.1.  IB 5.6 and later don't need
+    #   this, but it doesn't hurt to list the library.
+    if (-f ('/lib/libNoVersion-2.1.2.so'))
+    {
+	$LIBS .= ' -lNoVersion-2.1.2'
+    }
+}
+elsif ($os eq 'freebsd')
+{
+	my $ib_lib = ($is_final ? '/usr/lib ' : '/usr/interbase/lib ');
+
+	$ib_lib = prompt("Where is your InterBase library directory?",
+		$ib_lib);
+    $LIBS = "-L$ib_lib" . '-lgds';
+}
+elsif ($os eq 'hpux')
+{
+    $LIBS = '-lgds -ldld';
+}
+elsif ($os eq 'sco')
+{
+    # Uncomment this line if you use InterBase 4.0 for SCO OSR5:
+    # $LIBS = '-b elf -B dynamic -lgds -lsocket -lcrypt_i';
+
+    # Uncomment this line if you use InterBase 5.5 for SCO OSR5:
+    $LIBS = '-lgds -lsocket -lcrypt_i -lc -lm';
+}
+elsif ($os eq 'sunos')
+{
+    $LIBS = '-lgdslib -ldl';
+}
+elsif ($os eq 'irix')
+{
+    $LIBS = '-lgds -lsun';
+}
+elsif ($os eq 'aix')
+{
+    $LIBS = '-lgdsshr';
+}
+elsif ($os eq 'dgux')
+{
+    $LIBS = '-lgds -lgdsf -ldl -ldgc';
+}
+elsif ($os eq 'osf1')
+{
+    $LIBS = '-lgds';
+}
+elsif ($os eq 'sysv')
+{
+    $LIBS = '-lgds -lnsl -lsocket -ldl';
+}
+else
+{
+    carp "DBD::InterBase is not supported on platform $os.\n";
+    exit 1;
+}
+
+# Note: use -DIBSERVICES to enable the experimental code
+# for InterBase 6 Services API.  This code is far from
+# complete and is for development purposes only at this time.
 
 WriteMakefile(
-    'NAME'  => 'DBD::InterBase',
-    'VERSION_FROM' => 'InterBase.pm', # finds $VERSION
-    'NORECURS' => 1,
-    'PREREQ_PM' => { IBPerl => 0.7 },
+    'NAME'		=> 'DBD::InterBase',
+    'VERSION_FROM' 	=> 'InterBase.pm', # finds $VERSION
+	'C'         => ['dbdimp.c'],
+  	'H'			=> ['dbdimp.h', 'InterBase.h'],
+    'CCFLAGS'	=> $CCFLAGS,
+    'INC'		=> "$INC",
+	'OBJECT'    => "InterBase.o dbdimp.o",
+    'LIBS'		=> [ $LIBS ],
+    'OPTIMIZE'	=> $OPT,
+    'XSPROTOARG'	=> '-noprototypes',
+    'dist'		=> {COMPRESS=>'gzip -9f', SUFFIX=>'gz'},
+	'realclean' => '*.xsi',
 );
 
-__DATA__
+package MY;
 
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
-
-######################### We start with some black magic to print on failure.
-
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
-
-BEGIN { $| = 1; print "1..21\n"; }
-END {print "not ok 1\n" unless $loaded;}
-use DBI;
-$loaded = 1;
-print "ok 1\n";
-
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
-
-$dbmain = 'template_dsn';
-$dbname = 'template_db';
-$dbuser = 'template_user';
-$dbpass = 'template_pass';
-
-######################### create and connect to test database
-
-print "Connecting with AutoCommit off... ";
-( $dbh = DBI->connect($dbmain, $dbuser, $dbpass, {AutoCommit => 0}) )
-    and print "ok 2\n"
-    or die "\nnot ok 2: $DBI::errstr";
-
-######################### create, insert, update, delete, drop
-
-print "Creating table... ";
-( $dbh->do( "CREATE TABLE person ( id integer, name char(30) )" ) )
-    and print "ok 3\n"
-    or print "\nnot ok 5: $DBI::errstr";
-
-print "Committing... ";
-( $dbh->commit )
-    and print "ok 4\n"
-    or print "\nnot ok 4: $DBI::errstr";
-
-print "Inserting with do... ";
-( $dbh->do( "INSERT INTO person VALUES( 1, 'Yustina Sri Suharini' )" ) )
-    and print "ok 5\n"
-    or print "\nnot ok 5: $DBI::errstr";
-
-print "Preparing insert... ";
-( $sth = $dbh->prepare( "INSERT INTO person VALUES( 2, 'Edwin Pratomo' )" ) )
-    and print "ok 6\n"
-    or print "\nnot ok 6: $DBI::errstr";
-
-print "Executing... ";
-( $sth->execute )
-    and print "ok 7\n"
-    or print "\nnot ok 7: $DBI::errstr";
-
-print "Preparing select... ";
-( $sth = $dbh->prepare( "SELECT * FROM person" ) )
-    and print "ok 8\n"
-    or print "\nnot ok 8: $DBI::errstr";
-
-print "Executing... ";
-( $numrows = $sth->execute )
-    and print "ok 9\n"
-    or print "\nnot ok 9: $DBI::errstr";
-
-print "Fetching first row... ";
-@row = $sth->fetchrow;
-( join(" ", @row) =~ m{Yustina} ) 
-    and print "ok 10\n"
-    or print "\nnot ok  10: $DBI::errstr";
-
-print "Getting fields name... ";
-@name = @{$sth->{'NAME'}};
-( join(" ", @name) eq 'ID NAME' )
-    and print "ok 11\n"
-    or print "\nnot ok 11: $DBI::errstr";
-
-# masalah di sini
-#@type = @{$sth->{'TYPE'}};
-#( join(" ", @type) eq '23 20' )
-#1    and print "ok 16\n"
-#    or print "\nnot ok 16: $DBI::errstr";
-
-# masalah di sini
-#@size = @{$sth->{'SIZE'}};
-#( join(" ", @size) eq '16 30' )
-#1    and print "ok 17\n"
-#    or print "\nnot ok 17: $DBI::errstr";
-
-print "Finishing cursor... ";
-( $sth->finish )
-    and print "ok 12\n"
-    or print "\nnot ok 12: $DBI::errstr";
-
-print "Updating with do... ";
-( $dbh->do( "UPDATE person SET id = 3 WHERE name = 'Edwin Pratomo'" ) )
-    and print "ok 13\n"
-    or print "\nnot ok 13: $DBI::errstr";
-
-print "Preparing update... ";
-( $sth = $dbh->prepare( "UPDATE person SET id = id + 1" ) )
-    and print "ok 14\n"
-    or print "\nnot ok 14: $DBI::errstr";
-
-print "Executing... ";
-( $sth->execute )
-    and print "ok 15\n"
-    or print "\nnot ok 15: $DBI::errstr";
-
-print "Deleting with do... ";
-( $dbh->do( "DELETE FROM person WHERE id = 3" ) )
-    and print "ok 16\n"
-    or print "\nnot ok 16: $DBI::errstr";
-
-print "Committing changes... ";
-( $dbh->commit )
-    and print "ok 17\n"
-    or print "\nnot ok 17: $DBI::errstr";
-
-print "Disconnecting... ";
-( $dbh->disconnect )
-    and print "ok 18\n"
-    or print "\nnot ok 18: $DBI::errstr";
-
-print "Connecting... ";
-( $dbh = DBI->connect($dbmain, $dbuser, $dbpass) )
-    and print "ok 19\n"
-    or print "\nnot ok 19: $DBI::errstr";
-
-print "Drop table... ";
-# masalah di sini, gak bisa drop tanpa disconnect dulu
-( $dbh->do( "DROP TABLE person" ) )
-    and print "ok 20\n"
-    or print "\nnot ok 20: $DBI::errstr";
-
-print "Disconnecting... ";
-( $dbh->disconnect )
-    and print "ok 21\n"
-    or print "\nnot ok 21: $DBI::errstr";
-
-print "all tests passed.\n";
-
-######################### EOF
-
+sub postamble
+{
+  &::dbd_postamble(@_);
+}

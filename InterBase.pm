@@ -1,14 +1,31 @@
 
-use strict;
+#   $Id: InterBase.pm,v 1.10 2000/08/29 20:03:45 edpratomo Exp $
+#
+#   Copyright (c) 1999,2000 Edwin Pratomo
+#
+#   You may distribute under the terms of either the GNU General Public
+#   License or the Artistic License, as specified in the Perl README file,
+#   with the exception that it cannot be placed on a CD-ROM or similar media
+#   for commercial distribution without the prior approval of the author.
 
-use Carp;
-use IBPerl;
+require 5.003;
 
 package DBD::InterBase;
+use strict;
+use Carp;
+
+use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
+use DBI ();
+require Exporter;
+require DynaLoader;
+
+@ISA = qw(Exporter DynaLoader);
+@EXPORT = qw();
+$VERSION = '0.21';
+
+bootstrap DBD::InterBase $VERSION;
 
 use vars qw($VERSION $err $errstr $drh);
-
-$VERSION = '0.1';
 
 $err = 0;
 $errstr = "";
@@ -30,445 +47,238 @@ sub driver
     $drh;
 }
 
-#############   
-# DBD::InterBase::dr
-# methods:
-#   connect
-#   disconnect_all
-#   DESTROY
+# taken from JWIED's DBD::mysql, with slight modification
+sub _OdbcParse($$$) {
+    my($class, $dsn, $hash, $args) = @_;
+    my($var, $val);
+    if (!defined($dsn)) {
+        return;
+    }
+    while (length($dsn)) 
+    {
+        if ($dsn =~ /([^;]*)[;](.*)/) {
+#        if ($dsn =~ /([^:;=]*)[:;](.*)/) {
+            $val = $1;
+            $dsn = $2;
+        } else {
+            $val = $dsn;
+            $dsn = '';
+        }
+        if ($val =~ /([^=]*)=(.*)/) {
+            $var = $1;
+            $val = $2;
+            if ($var eq 'hostname'  ||  $var eq 'host') 
+            {
+                $hash->{'host'} = $val;
+            } elsif ($var eq 'db'  ||  $var eq 'dbname') 
+            {
+                $hash->{'database'} = $val;
+            } else {
+                $hash->{$var} = $val;
+            }
+        } else {
+            foreach $var (@$args) {
+                if (!defined($hash->{$var})) {
+                    $hash->{$var} = $val;
+                    last;
+                }
+            }
+        }
+    }
+    $hash->{database} = "$hash->{host}:$hash->{database}" if $hash->{host};
+}
+
+sub _OdbcParseHost ($$) {
+    my($class, $dsn) = @_;
+    my($hash) = {};
+    $class->_OdbcParse($dsn, $hash, ['host', 'port']);
+    ($hash->{'host'}, $hash->{'port'});
+}
 
 package DBD::InterBase::dr;
 
-$DBD::InterBase::dr::imp_data_size = $DBD::InterBase::dr::imp_data_size = 0;
-$DBD::InterBase::dr::data_sources_attr = $DBD::InterBase::dr::data_sources_attr = undef;
-
 sub connect {
     my($drh, $dsn, $dbuser, $dbpasswd, $attr) = @_;
-    my %conn;
-    my ($key, $val);
 
-    foreach my $pair (split(/;/, $dsn))
-    {
-        ($key, $val) = $pair =~ m{(.+)=(.*)};
-        if ($key eq 'host') { $conn{Server} = $val}
-        elsif ($key =~ m{database}) { $conn{Path} = $val }
-        elsif ($key =~ m{ib_protocol}i) { $conn{Protocol} = $val }
-        elsif ($key =~ m{ib_role}i) {  $conn{Role} = $val }
-        elsif ($key =~ m{ib_charset}i) { $conn{Charset} = $val }
-        elsif ($key =~ m{ib_cache}i) {$conn{Cache} = $val }
-        elsif ($key =~ m{ib_dialect}i) {$conn{Dialect} = int($val) }
-    }
+    $dbuser ||= "SYSDBA";
+    $dbpasswd ||= "masterkey";
 
-    $conn{User} = $dbuser || "SYSDBA";
-    $conn{Password} = $dbpasswd || "masterkey";
-        
-    my $db = new IBPerl::Connection(%conn);
-    if ($db->{Handle} < 0) {
-	    $drh->DBI::set_err(-1, $db->{Error});
-        return undef;
-    }
+    my ($this, $private_attr_hash);
 
-    my $h = new IBPerl::Transaction(Database=>$db);
-    if ($h->{Handle} < 0) {
-	    $drh->DBI::set_err(-1, $db->{Error});
-        return undef;
-    }
-
-    my $this = DBI::_new_dbh($drh, {
+    $private_attr_hash = {
         'Name' => $dsn,
-        'User' => $dbuser, 
-    });
+        'user' => $dbuser,
+        'password' => $dbpasswd
+    };
 
-    if ($this)
-    {
-        while (($key, $val) = each(%$attr))
-        {
-            $this->STORE($key, $val);   #set attr like AutoCommit
-        }
-    }
+    DBD::InterBase->_OdbcParse($dsn, $private_attr_hash,
+                    ['database', 'host', 'port',
+                     'ib_role', 'ib_charset', 'ib_dialect', 'ib_cache']);
 
-    $this->STORE('ib_conn_handle', $db);
-    $this->STORE('ib_trans_handle', $h);
-    $this->STORE('Active', 1);
-    $this;
+    # second attr args will be retrieved using DBIc_IMP_DATA
+    my $dbh = DBI::_new_dbh($drh, {}, $private_attr_hash);
+
+    DBD::InterBase::db::_login($dbh, $dsn, $dbuser, $dbpasswd, $attr) 
+        or return undef;
+
+    $dbh;
 }
 
-sub disconnect_all { }
-
-sub DESTROY { undef; }
-
-
-##################
-# DBD::InterBase::db
-# methods:
-#   prepare
-#   commit
-#   rollback
-#   disconnect
-#   do
-#   ping
-#   STORE
-#   FETCH
-#   DESTROY
-
 package DBD::InterBase::db;
+use strict;
+use Carp;
 
-$DBD::InterBase::db::imp_data_size = $DBD::InterBase::db::imp_data_size= 0;
+sub do {
+    my($dbh, $statement, $attr, @params) = @_;
+    my $rows;
+    if (@params) {
+        my $sth = $dbh->prepare($statement, $attr) or return undef;
+        $sth->execute(@params) or return undef;
+        $rows = $sth->rows;
+    } else {
+        $rows = DBD::InterBase::db::_do($dbh, $statement, $attr);
+    }       
+    ($rows == 0) ? "0E0" : $rows;
+}
 
-sub prepare 
-{
-    my($dbh, $statement, $attribs)= @_;
-    my $h = $dbh->FETCH('ib_trans_handle');
-
-    if (!$h)
-    {
-        return $dbh->DBI::set_err(-1, "Fail to get transaction handle");
-    }
-
-    $attribs->{ib_separator} = undef unless exists ($attribs->{ib_separator});
-    $attribs->{ib_dateformat} = "%c" unless exists ($attribs->{ib_dateformat});
-
-    my $st = new IBPerl::Statement(
-        Transaction => $h,
-        Stmt => $statement,
-        Separator => $attribs->{ib_separator},
-        DateFormat => $attribs->{ib_dateformat},
-    );
-
-    if ($st->{Handle} < 0) {
-        return $dbh->DBI::set_err(-1, $st->{Error});
-    }
-
-    my $sth = DBI::_new_sth($dbh, {'Statement' => $statement});
-
-    if ($sth) {
-        $sth->STORE('ib_stmt_handle', $st);
-        $sth->STORE('ib_stmt', $statement);
-        $sth->STORE('ib_params', []); #storing bind values
-        $sth->STORE('NUM_OF_PARAMS', ($statement =~ tr/?//));
-    }
+sub prepare {
+    my ($dbh, $statement, $attribs) = @_;
+    
+    my $sth = DBI::_new_sth($dbh, {
+        'Statement' => $statement });
+    DBD::InterBase::st::_prepare($sth, $statement, $attribs)
+        or return undef;
     $sth;
 }
 
-sub _commit
-{
+# from Christiaan Lademann <cal@zls.de> :
+
+sub type_info_all {
     my $dbh = shift;
-    my $db = $dbh->FETCH('ib_conn_handle');
-    my $h = $dbh->FETCH('ib_trans_handle');
-    if ($h->IBPerl::Transaction::commit < 0) {
-        return $dbh->DBI::set_err(-1, $h->{Error});
-    }
-    $h = new IBPerl::Transaction(Database => $db);
-    if ($h->{Handle} < 0) {
-        return $dbh->DBI::set_err(-1, $h->{Error});
-    }
-    $dbh->STORE('ib_trans_handle', $h);
+    my $names = {
+        TYPE_NAME               => 0,
+        DATA_TYPE               => 1,
+        COLUMN_SIZE             => 2,
+        LITERAL_PREFIX          => 3,
+        LITERAL_SUFFIX          => 4,
+        CREATE_PARAMS           => 5,
+        NULLABLE                => 6,
+        CASE_SENSITIVE          => 7,
+        SEARCHABLE              => 8,
+        UNSIGNED_ATTRIBUTE      => 9,
+        FIXED_PREC_SCALE        =>10,
+        AUTO_UNIQUE_VALUE       =>11,
+        LOCAL_TYPE_NAME         =>12,
+        MINIMUM_SCALE           =>13,
+        MAXIMUM_SCALE           =>14,
+        NUM_PREC_RADIX          =>15,
+    };
 
-    1;
+    my $ti = [
+        $names,
+        # name type   prec prefix suffix  create params null case se unsign fix  auto
+        # local    min    max  radix
+        #                                            
+        [ 'SQL_ARRAY', 0, 64536, undef, undef, undef, 1, '1', 0, undef, '0', '0',
+'ARRAY', undef, undef, undef ],
+        [ 'SQL_BLOB',  0, 64536, undef, undef, undef, 1, '1', 0, undef, '0', '0',
+'BLOB', undef, undef, undef ],
+        [ 'SQL_VARYING', DBI::SQL_VARCHAR, 32765,  '\'',  '\'', 'max length', 1, '1', 3, undef, '0', '0',
+'VARCHAR', undef, undef, undef ],
+        [ 'SQL_TEXT', DBI::SQL_VARCHAR, 32765,  '\'',  '\'', 'max length', 1, '1', 3, undef, '0', '0',
+'TEXT', undef, undef, undef ],
+        [ 'SQL_DOUBLE', DBI::SQL_DOUBLE, 18, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
+'DOUBLE', undef, undef, undef ],
+        [ 'SQL_QUAD', DBI::SQL_DOUBLE, 18, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
+'QUAD', undef, undef, undef ],
+        [ 'SQL_FLOAT', DBI::SQL_FLOAT, 12, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
+'FLOAT', undef, undef, undef ],
+        [ 'SQL_LONG', DBI::SQL_INTEGER, 10, undef, undef, undef, 1, '0', 2, '0', '0', '0',
+'LONG', undef, undef, undef ],
+        [ 'SQL_SHORT', DBI::SQL_SMALLINT, 5, undef, undef, undef, 1, '0', 2, '0', '0', '0',
+'SHORT', undef, undef, undef ],
+        [ 'SQL_TIMESTAMP', DBI::SQL_TIMESTAMP, 47, '\'', '\'', undef, 1, '0', 2, undef, '0', '0',
+'TIMESTAMP', undef, undef, undef ],
+        [ 'SQL_D_FLOAT', DBI::SQL_REAL, 24, undef, undef, 'precision', 1, '0', 2, '0', '0', '0',
+'D_FLOAT', undef, undef, undef ],
+        [ 'SQL_TYPE_TIME', DBI::SQL_TIME, 16, '\'', '\'', undef, 1, '0', 2, undef, '0', '0',
+'TIME', undef, undef, undef ],
+        [ 'SQL_TYPE_DATE', DBI::SQL_DATE, 10, '\'', '\'', undef, 1, '0', 2, undef, '0', '0',
+'DATE', undef, undef, undef ],
+        [ 'SQL_INT64', DBI::SQL_DOUBLE, 20, undef, undef, undef, 1, '0', 2, '0', '0', '0',
+'INT64', undef, undef, undef ],
+
+       ];
+       return $ti;
 }
 
-sub commit
-{
-    my $dbh = shift;
+# XXX TODO
+#sub type_info
+#{
+#    my ($dbh, $type) = @_;
+#    
+#}
 
-    if ($dbh->FETCH('AutoCommit')) {
-        warn("Commit ineffective while AutoCommit is on");
-    }
-    else { return _commit($dbh); }
-    return 1;
-}
-
-sub rollback
-{
-    my $dbh = shift;
-    if ($dbh->FETCH('AutoCommit')) {
-        warn("Rollback ineffective while AutoCommit is on");
-    }
-    else
-    {
-        my $h = $dbh->FETCH('ib_trans_handle');
-        if ($h->IBPerl::Transaction::rollback < 0) {
-            return $dbh->DBI::set_err(-1, $h->{Error});
-        }   
-    }
-    1;
-}
-
-sub disconnect
-{
-    my $dbh = shift;
-    my $db = $dbh->FETCH('ib_conn_handle');
-    my $h = $dbh->FETCH('ib_trans_handle');
-    if ($dbh->FETCH('AutoCommit'))
-    {
-        if ($h->IBPerl::Transaction::commit < 0) {
-            return $dbh->DBI::set_err(-1, $h->{Error});
-        }
-    }
-    else
-    {
-        if ($h->IBPerl::Transaction::rollback < 0) {
-            return $dbh->DBI::set_err(-1, $h->{Error});
-        }
-    }
-    my $retval = $db->IBPerl::Connection::disconnect;
-    if ($retval < 0)
-    {
-        return $dbh->DBI::set_err(-1, $db->{Error});
-    }   
-    $dbh->STORE('Active', 0);
-    1;
-}
-
-sub do
-{
-    my ($dbh, $stmt, $attr, @params) = @_;
-    my $sth = $dbh->prepare($stmt, $attr) or return undef;
-    my $st = $sth->{'ib_stmt_handle'};
-    if ($st->IBPerl::Statement::execute(@params) < 0)
-    {
-        return $sth->DBI::set_err(1, $st->{Error});
-    }   
-    _commit($dbh) if ($dbh->{AutoCommit});
-    -1;
-}
-
+# from Michael Arnett <marnett@samc.com> :
 sub tables
 {
     my $dbh = shift;
     my @tables;
-    my %row;
-    my $statement = "SELECT RDB\$RELATION_NAME FROM RDB\$RELATIONS WHERE (RDB\$SYSTEM_FLAG IS NULL OR RDB\$SYSTEM_FLAG = 0) AND RDB\$VIEW_SOURCE
-IS NULL";
-    my $h = $dbh->FETCH('ib_trans_handle');
- 
-    if (!$h)
-    {
-        return $dbh->DBI::set_err(-1, "Fail to get transaction handle");
-    }
- 
-    my $st = new IBPerl::Statement(
-        Transaction => $h,
-        Stmt => $statement,
-    );
- 
-    if ($st->{Handle} < 0) {
-        return $dbh->DBI::set_err(-1, $st->{Error});
-    }
- 
-    if ($st->open() < 0) {
-        return $dbh->DBI::set_err(-1, $st->{Error});
-    }
- 
-    while ($st->IBPerl::Statement::fetch(\%row)==0) {
-        foreach (keys %row) {
-           $row{$_} =~ s/\s+$//;
-           push(@tables, $row{$_});
-        }
+    my @row;
+    my $stmt = 
+'SELECT RDB$RELATION_NAME FROM RDB$RELATIONS WHERE (RDB$SYSTEM_FLAG IS NULL 
+OR RDB$SYSTEM_FLAG = 0) AND RDB$VIEW_SOURCE IS NULL';
+
+    my $sth = $dbh->prepare($stmt) or
+        return undef;
+    $sth->{ChopBlanks} = 1;
+    $sth->execute;
+    while (@row = $sth->fetchrow_array) {
+        push(@tables, @row);
     }
     return @tables;
 }
 
-
-sub STORE
-{
-    my ($dbh, $attr, $val) = @_;
-    if ($attr eq 'AutoCommit')
-    {
-        if (exists $dbh->{AutoCommit} and $val == 1 and $dbh->{$attr} == 0) 
-        {
-            _commit($dbh) or 
-                warn("Problem encountered while setting AutoCommit to On");
-        }
-        $dbh->{$attr} = $val;
-        return 1;
-    }
-    if ($attr =~ /^ib_/)
-    {
-        $dbh->{$attr} = $val;
-        return 1;
-    }
-    $dbh->DBD::_::db::STORE($attr, $val);
-}
-
-sub FETCH
-{
-    my ($dbh, $attr) = @_;
-    if ($attr eq 'AutoCommit')
-    {
-        return $dbh->{$attr};
-    }
-    if ($attr =~ /^ib_/)
-    {
-        return $dbh->{$attr};
-    }
-    $dbh->DBD::_::db::FETCH($attr);
-}
-
-sub DESTROY
+sub table_info
 {
     my $dbh = shift;
-    $dbh->disconnect if $dbh->FETCH('Active');
-    undef;
+
+    my $sth = $dbh->prepare(q{
+      SELECT
+        NULL                      TABLE_CAT, 
+        a.rdb$owner_name          TABLE_SCHEM,
+        a.rdb$relation_name       TABLE_NAME,
+        CAST('TABLE' AS CHAR(5))  TABLE_TYPE,
+        a.rdb$description         REMARKS
+      FROM rdb$relations a
+      WHERE a.rdb$system_flag=0 AND a.rdb$view_blr IS NULL
+        UNION ALL
+      SELECT
+        NULL                      TABLE_CAT, 
+        b.rdb$owner_name          TABLE_SCHEM,
+        b.rdb$relation_name       TABLE_NAME,
+        CAST('VIEW' AS CHAR(5))   TABLE_TYPE,
+        b.rdb$description         REMARKS
+      FROM rdb$relations b
+      WHERE b.rdb$system_flag=0 AND b.rdb$view_blr IS NULL
+    });
+    $sth->execute() or return undef;
+
+    return $sth;
 }
 
 sub ping {
     my($dbh) = @_;
     my $ret = 0;
-    eval {
-            local $SIG{__DIE__}  = sub { return (0); };
-            local $SIG{__WARN__} = sub { return (0); };
-            # adapt the select statement to your database:
-            my $sth = $dbh->prepare('SELECT 1 FROM RDB$DATABASE');
-            $ret = $sth && ($sth->execute);
-            $sth->finish;
-    };
+
+    local $dbh->{RaiseError} = 0;
+#    local $SIG{__WARN__} = sub { return (0); };
+    my $sth = $dbh->prepare('SELECT 1 FROM RDB$DATABASE');
+    $ret = $sth && ($sth->execute);
+    $sth->finish;
+
     return ($@) ? 0 : $ret;
 }
-
-####################
-#
-# DBD::InterBase::st
-# methods:
-#   execute
-#   fetchrow_arrayref
-#   finish  
-#   STORE
-#   FETCH
-#   DESTROY 
-#
-####################
-
-package DBD::InterBase::st;
-use strict;
-$DBD::InterBase::st::imp_data_size = $DBD::InterBase::st::imp_data_size = 0;
-
-sub bind_param
-{
-    my ($sth, $pNum, $val, $attr) = @_;
-    my $type = (ref $attr) ? $attr->{TYPE} : $attr;
-    if ($type) {
-        my $dbh = $sth->{'Database'};
-        $val = $dbh->quote($sth, $type);
-    }
-    $sth->{ib_params}->[$pNum-1] = $val;
-    1;
-}
-
-sub execute
-{
-    my ($sth, @bind_values) = @_;
-    my $params = (@bind_values) ? \@bind_values : 
-                 $sth->FETCH('ib_params');
-    my $num_param = $sth->FETCH('NUM_OF_PARAMS');
-
-    if (@$params != $num_param) {
-        return $sth->DBI::set_err(1, 'Invalid number of params');       
-    }
-
-    my $st = $sth->{'ib_stmt_handle'};
-    my $stmt = $sth->{'ib_stmt'};
-    my $dbh = $sth->{'Database'};
-    # do commit to create new snapshopt. 
-    DBD::InterBase::db::_commit($dbh) if ($dbh->{AutoCommit});
-
-# use open() for select and execute() for non-select
-# execute procedure doesn't work at IBPerl
-    if ($stmt =~ m{^\s*?SELECT}i or 
-        $stmt =~ m{^\s*?EXECUTE\s+PROCEDURE}i)
-    {
-        if ($st->IBPerl::Statement::open(@$params) < 0)
-        {
-            return $sth->DBI::set_err(1, $st->{Error});
-        }
-    }
-    else
-    {
-        if ($st->IBPerl::Statement::execute(@$params) < 0)
-        {
-            return $sth->DBI::set_err(1, $st->{Error});
-        }
-#       $sth->finish; #not work for non-select
-        DBD::InterBase::db::_commit($dbh) if ($dbh->{AutoCommit});
-    }
-    -1;
-}
-
-sub fetch
-{
-    my $sth = shift;
-    my $st = $sth->FETCH('ib_stmt_handle');
-    my $record_ref = [];
-
-    my $retval = $st->IBPerl::Statement::fetch($record_ref);
-    if ($retval == 0) {
-        unless ($sth->{NAME})
-        {
-            $sth->STORE('NAME', $st->{Columns});
-            $sth->STORE('NUM_OF_FIELDS', scalar (@{$sth->{NAME}}));
-        }
-        $sth->STORE('NULLABLE', $st->{Nulls});
-
-        if ($sth->FETCH('ChopBlanks')) {
-            map { $_ =~ s/\s+$//; } @$record_ref;
-        }
-        return $sth->_set_fbav($record_ref);
-#       return $record_ref;
-    }
-
-    elsif ($retval < 0) {
-        return $sth->DBI::set_err(1, $st->{Error});
-    }
-    elsif ($retval == 100) {
-        $sth->finish;
-        return undef;
-    }
-}
-
-*fetchrow_arrayref = \&fetch;
-
-sub finish
-{
-    my $sth = shift;
-    my $st = $sth->FETCH('ib_stmt_handle');
-    if ($st->IBPerl::Statement::close < 0) 
-    {
-        return $sth->DBI::set_err(-1, $st->{Error});
-    }
-    $sth->DBD::_::st::finish();
-    1;
-}
-
-sub STORE
-{
-    my ($sth, $attr, $val) = @_;
-    # read-only attributes... who's responsible?
-    if ($attr eq 'NAME' 
-#       or $attr eq 'NUM_OF_FIELDS' #must be passed to SUPER::STORE()
-#       or $attr eq 'NUM_OF_PARAMS' #same as above
-        or $attr eq 'NULLABLE'
-        or ($attr =~ /^ib_/o)
-    )   
-    {
-        return $sth->{$attr} = $val;
-    }
-
-    $sth->DBD::_::st::STORE($attr, $val);
-#   $dbh->SUPER::STORE($attr, $val);
-}
-
-sub FETCH
-{
-    my ($sth, $attr) = @_;
-    if ($attr =~ /^ib_/ or $attr eq 'NAME' or $attr eq 'NULLABLE')
-    {
-        return $sth->{$attr};
-    }
-    $sth->DBD::_::st::FETCH($attr);
-#   $dbh->SUPER::FETCH($attr, $attr);   
-}
-
-sub DESTROY { undef; }
 
 1;
 
@@ -481,185 +291,613 @@ DBD::InterBase - DBI driver for InterBase RDBMS server
 =head1 SYNOPSIS
 
   use DBI;
-  
-  $dbpath = '/home/edwin/perl_example.gdb';
-  $dsn = "DBI:InterBase:database=$dbpath;host=puskom-4;ib_dialect=3";
 
-  $dbh = DBI->connect($dsn, '', '', {AutoCommit => 0}) 
-    or die "$DBI::errstr";
+  $dbh = DBI->connect("dbi:InterBase:db=$dbname", "sysdba", "masterkey");
 
-  $dbh = DBI->connect($dsn, '', '', {RaiseError => 1}) 
-    or die "$DBI::errstr";
-
-  $sth = $dbh->prepare("select * from SIMPLE") or die $dbh->errstr;
-  $sth->execute;
-
-  while (@row = $sth->fetchrow_array))
-  {
-    print @row, "\n";
-  }
-
-  $dbh->commit or warn $dbh->errstr;
-  $dbh->disconnect or warn $dbh->errstr;  
-
-For more examples, see eg/ directory.
+  # See the DBI module documentation for full details
 
 =head1 DESCRIPTION
 
-This DBI driver currently is a wrapper around IBPerl, written in pure
-perl. It is based on the DBI 1.13 specification dan IBPerl 0.8p2. 
+DBD::InterBase is a Perl module which works with the DBI module to provide
+access to InterBase databases.
 
-B<Connecting with InterBase-specific optional parameters>
+=head1 MODULE DOCUMENTATION
 
-InterBase allows you to connect with specifiying ib_role, ib_protocol, 
-ib_cache, ib_charset, ib_separator, ib_dateformat, and ib_dialect. 
-These parameters can be passed to InterBase via $dsn of DBI connect 
-method. Eg:
+This documentation describes driver specific behavior and restrictions. 
+It is not supposed to be used as the only reference for the user. In any 
+case consult the DBI documentation first !
 
-  $dsn = 'dbi:InterBase:database=/path/to/data.gdb;ib_dialect=3';
+=head1 THE DBI CLASS
 
-=head1 PREREQUISITE
-
-=over 2
-
-=item * InterBase client
-
-Available at http://www.interbase.com/,
-
-=item * IBPerl 0.8 patch 2, by Bill Karwin
-
-Available at http://www.karwin.com/ibperl/
-
-=back
-
-=head1 INSTALLATION
-
-Run:
-
-  # perl Makefile.PL
-
-Here you will be prompted with some questions due to the database that will 
-be used during 'make test'.
-
-  # make
-  # make test (optional)
-
-The database you specify when running Makefile.PL should has been existed
-before running 'make test', otherwise you will get 'Invalid DBI handle -1'
-error message. 
-
-  # make install
-
-=head1 WARNING
-
-InterBase specific behaviour:
-
-=over 2
-
-=item * $sth->{NAME} available after the first fetch
-
-=item * $sth->{NUM_OF_FIELDS} available after the first fetch
-
-=item * $dbh->do() doesn't return number of records affected
-
-=item * $sth->execute() doesn't return number of records
-
-=back
-
-=head1 TESTED PLATFORMS
-
-This module has been tested on Linux (2.2.12-20), IBPerl 0.8p2, 
-Perl 5.005_03, to access InterBase SuperServer 6.0 for Linux.
-
-=head1 KNOWN BUGS
-
-This sequence won't work:
-
-  $dbh->do($stmt); #any statement on table TBL
-  $dbh->commit;
-  $dbh->do("drop table TBL");
-
-Workaround: Change the commit with disconnect, and then connect again. This
-bug seems to occurs at IBPerl level. Try some examples in eg/ibperl directory.
-
-=head1 BUG REPORTS
-
-Please send any bug report and patches to dbi-users mailing list
-(http://www.isc.org/dbi-lists.html) Any bug report should be accompanied with 
-the script that got the problem, and the output of DBI trace method.
-
-=head1 HISTORY
-
-B<Version 0.1, June 28, 2000>
-
-Several connect() attributes specific to InterBase now use ib_ prefix:
-ib_protocol, ib_role, ib_charset, ib_charset, and ib_cache.
-
-Several bug fixes and features addition:
+=head2 DBI Class Methods
 
 =over 4
 
-=item * C<Separator> and C<DateFormat> are obsolete. Use C<ib_separator> and
-C<ib_dateformat> instead.
+=item B<connect>
 
-=item * C<ib_dialect> attribute in C<connect()> method.
+To connect to a database with a minimum of parameters, use the 
+following syntax: 
 
-=item * C<set_err> in C<connect()>, by Mark D. Anderson
-<I<mda@discerning.com>>,
+  $dbh = DBI->connect("dbi:InterBase:dbname=$dbname", "sysdba", "masterkey");
 
-=item * C<tables()> method, by Michael Arnett <I<marnett@mediaone.net>>,
+This connects to the database $dbname at localhost as SYSDBA user with the
+default password. 
 
-=item * C<ping()> method, by Flemming Frandsen <I<dion@swamp.dk>>, 
-and Mike Shoyher <I<msh@e-labs.ru>>.
+The following connect statement shows all possible parameters: 
 
-=item * AutoCommit=>0 causes segfault within mod_perl, by Mike Shoyher 
-<I<msh@e-labs.ru>>.
+ $dsn =
+ "dbi:InterBase:dbname=$dbname;host=$host;ib_dialect=$dialect;ib_role=$role;ib_charset=$charset;ib_cache=$cache";
+ $dbh =  DBI->connect($dsn, $username, $password);
+
+The $dsn is prefixed by 'dbi:InterBase:', and consists of key-value
+parameters separated by B<semicolons>. The following is the list of valid
+parameters and their respective meanings:
+
+    parameter   meaning                             optional?
+    ---------------------------------------------------------
+    database    path to the database                mandatory
+    dbname      path to the database
+    db          path to the database
+    host        hostname (not IP address)           optional
+    ib_dialect  the SQL dialect to be used          optional
+    ib_role     the role of the user                optional
+    ib_charset  character set to be used            optional
+    ib_cache    number of database cache buffers    optional
+
+B<database> could be used interchangebly with B<dbname> and B<db>. 
+If a host is specified, connection will be made using TCP/IP sockets. 
+For example, to connect to a Windows host, the $dsn will look like this:
+
+ $dsn = "dbi:InterBase:db=C:/temp/test.gdb;host=rae.cumi.org;ib_dialect=3";
+
+InterBase 6.0 introduces B<SQL dialect> to provide backward compatibility with
+databases created by older versions of InterBase. In short, SQL dialect
+controls how InterBase interprets:
+
+ - double quotes
+ - the DATE datatype
+ - decimal and numeric datatypes
+ - new 6.0 reserved keywords
+
+Valid values for B<ib_dialect> are 1, 2, and 3. The driver's default value is
+1. For more detail reading on this topic, please refer to:
+
+ http://www.interbase.com/open/research/art_60dialects.html
+
+B<ib_role> specifies the role of the connecting user. B<SQL role> is
+implemented by InterBase to make database administration easier when dealing
+with lots of users. A detailed reading can be found at:
+
+ http://www.interbase.com/downloads/sqlroles.pdf
+
+If B<ib_cache> is not specified, the default database's cache size value will be 
+used. The InterBase Operations Guide discusses in full length the importance of 
+this parameter to gain the best performance.
+
+=item B<available_drivers>
+
+  @driver_names = DBI->available_drivers;
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<data_sources>
+
+This method is not yet implemented.
+
+=item B<trace>
+
+  DBI->trace($trace_level, $trace_file)
+
+Implemented by DBI, no driver-specific impact.
 
 =back
 
-B<Version 0.021, September 19, 1999>
 
-Separator and DateFormat options works for prepare() and do(). bind_param()
-now works. One more fix to AutoCommit behaviour.
+=head2 DBI Dynamic Attributes
 
-B<Version 0.02, July 31, 1999>
+See Common Methods. 
 
-Alpha code. Major enhancement from the previous pre-alpha code. Previous 
-known problems have been fixed. AutoCommit attribute works as expected. 
+=head1 METHODS COMMON TO ALL HANDLES
 
-B<Version 0.01, July 23, 1999>
+=over 4
 
-Pre-alpha code. An almost complete rewrite of DBIx::IB in pure perl. Problems
-encountered during handles destruction phase.
+=item B<err>
 
-B<DBIx::IB Version 0.01, July 22, 1999>
+  $rv = $h->err;
 
-DBIx::IB, a DBI emulation layer for IBPerl is publicly announced.
+Supported by the driver as proposed by DBI. 
 
-=head1 TODO
+=item B<errstr>
 
-=over 2
+  $str = $h->errstr;
 
-=item * Rigorous test under mod_perl and Apache::DBI
+Supported by the driver as proposed by DBI. 
 
-=item * An xs version should be much powerful, and simplify the installation 
-process.
+=item B<state>
+
+This method is not yet implemented.
+
+=item B<trace>
+
+  $h->trace($trace_level, $trace_filename);
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<trace_msg>
+
+  $h->trace_msg($message_text);
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<func>
+
+There are no driver specific methods to be called from func() method.
 
 =back
 
-=head1 ACKNOWLEDGEMENTS
+=head1 ATTRIBUTES COMMON TO ALL HANDLES
 
-Bill Karwin - author of IBPerl, Tim Bunce - author of DBI.
+=over 4
+
+=item B<Warn> (boolean, inherited)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<Active> (boolean, read-only)
+
+Supported by the driver as proposed by DBI. A database 
+handle is active while it is connected and  statement 
+handle is active until it is finished. 
+
+=item B<Kids> (integer, read-only)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<ActiveKids> (integer, read-only)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<CachedKids> (hash ref)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<CompatMode> (boolean, inherited)
+
+Not used by this driver. 
+
+=item B<InactiveDestroy> (boolean)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<PrintError> (boolean, inherited)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<RaiseError> (boolean, inherited)
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<ChopBlanks> (boolean, inherited)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<LongReadLen> (integer, inherited)
+
+Supported by the driver as proposed by DBI.The default value is 80 bytes. 
+
+=item B<LongTruncOk> (boolean, inherited)
+
+Supported by the driver as proposed by DBI.
+
+=item B<Taint> (boolean, inherited)
+
+Implemented by DBI, no driver-specific impact.
+
+=back
+
+=head1 DATABASE HANDLE OBJECTS
+
+=head2 Database Handle Methods
+
+=over 4
+
+=item B<selectrow_array>
+
+  @row_ary = $dbh->selectrow_array($statement, \%attr, @bind_values);
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<selectall_arrayref>
+
+  $ary_ref = $dbh->selectall_arrayref($statement, \%attr, @bind_values);
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<selectcol_arrayref>
+
+  $ary_ref = $dbh->selectcol_arrayref($statement, \%attr, @bind_values);
+
+Implemented by DBI, no driver-specific impact.
+
+=item B<prepare>
+
+  $sth = $dbh->prepare($statement, \%attr);
+
+Supported by the driver as proposed by DBI.
+When AutoCommit is On, this method implicitly starts a new transaction,
+which will be automatically committed after the following execute() or the
+last fetch(), depending on the statement type. For select statements,
+commit automatically takes place after the last fetch(), or by explicitly 
+calling finish() method if there are any rows remaining. For non-select
+statements, execute() will implicitly commits the transaction. 
+
+=item B<prepare_cached>
+
+  $sth = $dbh->prepare_cached($statement, \%attr);
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<do>
+
+  $rv  = $dbh->do($statement, \%attr, @bind_values);
+
+Supported by the driver as proposed by DBI.
+This should be used for non-select statements, where the driver doesn't take
+the conservative prepare - execute steps, thereby speeding up the execution
+time. But if this method is used with bind values, the speed advantage
+diminishes as this method calls prepare() for binding the placeholders.
+Instead of calling this method repeatedly with bind values, it would be
+better to call prepare() once, and execute() many times.
+
+See the notes for the execute method elsewhere in this document. 
+
+=item B<commit>
+
+  $rc  = $dbh->commit;
+
+Supported by the driver as proposed by DBI. See also the 
+notes about B<Transactions> elsewhere in this document. 
+
+=item B<rollback>
+
+  $rc  = $dbh->rollback;
+
+Supported by the driver as proposed by DBI. See also the 
+notes about B<Transactions> elsewhere in this document. 
+
+=item B<disconnect>
+
+  $rc  = $dbh->disconnect;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<ping>
+
+  $rc = $dbh->ping;
+
+This driver supports the ping-method, which can be used to check the 
+validity of a database-handle. This is especially required by
+C<Apache::DBI>.
+
+=item B<table_info>
+
+  $sth = $dbh->table_info;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<tables>
+
+  @names = $dbh->tables;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<type_info_all>
+
+  $type_info_all = $dbh->type_info_all;
+
+Supported by the driver as proposed by DBI. 
+
+For further details concerning the InterBase specific data-types 
+please read the L<InterBase Data Definition Guide>. 
+
+=item B<type_info>
+
+  @type_info = $dbh->type_info($data_type);
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<quote>
+
+  $sql = $dbh->quote($value, $data_type);
+
+Implemented by DBI, no driver-specific impact. 
+
+=back
+
+=head2 Database Handle Attributes
+
+=over 4
+
+=item B<AutoCommit>  (boolean)
+
+Supported by the driver as proposed by DBI. According to the 
+classification of DBI, InterBase is a database, in which a 
+transaction must be explicitly started. Without starting a 
+transaction, every change to the database becomes immediately 
+permanent. The default of AutoCommit is on, which corresponds 
+to the DBI's default. When setting AutoCommit to off, a transaction 
+will be started and every commit or rollback 
+will automatically start a new transaction. For details see the 
+notes about B<Transactions> elsewhere in this document. 
+
+=item B<Driver>  (handle)
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<Name>  (string, read-only)
+
+Not yet implemented.
+
+=item B<RowCacheSize>  (integer)
+
+Implemented by DBI, not used by the driver.
+
+=back
+
+=head1 STATEMENT HANDLE OBJECTS
+
+
+=head2 Statement Handle Methods
+
+=over 4
+
+=item B<bind_param>
+
+Supported by the driver as proposed by DBI. 
+The SQL data type passed as the third argument is ignored. 
+
+=item B<bind_param_inout>
+
+Not supported by this driver. 
+
+=item B<execute>
+
+  $rv = $sth->execute(@bind_values);
+
+Supported by the driver as proposed by DBI. 
+On success, this method returns -1 instead of the number of affected rows.
+
+=item B<fetchrow_arrayref>
+
+  $ary_ref = $sth->fetchrow_arrayref;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<fetchrow_array>
+
+  @ary = $sth->fetchrow_array;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<fetchrow_hashref>
+
+  $hash_ref = $sth->fetchrow_hashref;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<fetchall_arrayref>
+
+  $tbl_ary_ref = $sth->fetchall_arrayref;
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<finish>
+
+  $rc = $sth->finish;
+
+Supported by the driver as proposed by DBI. 
+
+=item B<rows>
+
+  $rv = $sth->rows;
+
+Supported by the driver as proposed by DBI. 
+It returns the number of B<fetched> rows for select statements, otherwise
+it returns -1 (unknown number of affected rows).
+
+=item B<bind_col>
+
+  $rc = $sth->bind_col($column_number, \$var_to_bind, \%attr);
+
+Supported by the driver as proposed by DBI. 
+
+=item B<bind_columns>
+
+  $rc = $sth->bind_columns(\%attr, @list_of_refs_to_vars_to_bind);
+
+Supported by the driver as proposed by DBI. 
+
+=item B<dump_results>
+
+  $rows = $sth->dump_results($maxlen, $lsep, $fsep, $fh);
+
+Implemented by DBI, no driver-specific impact. 
+
+=back
+
+=head2 Statement Handle Attributes
+
+=over 4
+
+=item B<NUM_OF_FIELDS>  (integer, read-only)
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<NUM_OF_PARAMS>  (integer, read-only)
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<NAME>  (array-ref, read-only)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<NAME_lc>  (array-ref, read-only)
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<NAME_uc>  (array-ref, read-only)
+
+Implemented by DBI, no driver-specific impact. 
+
+=item B<TYPE>  (array-ref, read-only)
+
+Supported by the driver as proposed by DBI, with 
+the restriction, that the types are InterBase
+specific data-types which do not correspond to 
+international standards.
+
+=item B<PRECISION>  (array-ref, read-only)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<SCALE>  (array-ref, read-only)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<NULLABLE>  (array-ref, read-only)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<CursorName>  (string, read-only)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<Statement>  (string, read-only)
+
+Supported by the driver as proposed by DBI. 
+
+=item B<RowCache>  (integer, read-only)
+
+Not supported by the driver. 
+
+=back
+
+=head1 FURTHER INFORMATION
+
+=head2 Transactions
+
+The transaction behavior is controlled with the attribute AutoCommit. 
+For a complete definition of AutoCommit please refer to the DBI documentation. 
+
+According to the DBI specification the default for AutoCommit is TRUE. 
+In this mode, any change to the database becomes valid immediately. Any 
+commit() or rollback() will be rejected. 
+
+If AutoCommit is switched-off, immediately a transaction will be started.
+A subsequent commit() will do a "soft commit", which preserve the
+transaction context for next reuse. A rollback() will rollback and close the
+active transaction, then implicitly start a new transaction. 
+A disconnect will issue a rollback. 
+
+InterBase provides fine control over transaction behavior, where users can
+specify the access mode, the isolation level, the lock resolution, and the 
+table reservation (for a specified table). Unfortunately the current version 
+of the driver hasn't supported any way to do this. Even SET TRANSACTION 
+statement won't work. A transaction always created using these default 
+parameter values:
+
+    Access mode:        read/write
+    Isolation level:    concurrency
+    Lock resolution:    wait
+
+Hopefully transaction control will be fully supported by the next release
+of this driver.
+
+=head2 Unsupported SQL Statements
+
+Beside SET TRANSACTION statement mentioned in the B<Transaction> section, 
+there are some other SQL statements which can't be used, because they are
+unavailable within the InterBase DSQL API. But this shouldn't be a problem,
+because their functionality are already provided by the DBI methods.
+
+The following list contains those SQL statements:
+
+=over 4
+
+=item * DESCRIBE
+
+Provides information about columns that are retrieved by a DSQL statement,
+or about placeholders in a statement. This functionality is supported by the
+driver, and transparent for users. Column names are available via
+$sth->{NAME} attributes.
+
+=item * EXECUTE IMMEDIATE
+
+Calling do() method without bind value(s) will do the same.
+
+=item * CLOSE, OPEN, DECLARE CURSOR
+
+$sth->{CursorName} is automagically available upon executing a "SELECT .. FOR
+UPDATE" statement. A cursor is closed after the last fetch(), or by calling
+$sth->finish(). 
+
+=item * PREPARE, EXECUTE, FETCH
+
+Similar functionalities are obtained by using prepare(), execute(), and 
+fetch() methods.
+
+=back
+
+=head2 Compatibility with DBI Extension modules 
+
+C<DBD::InterBase> is known to work with C<DBIx::Recordset> 0.21, and
+C<Apache::DBI> 0.87. DBI 1.14 has a subtle bug on C<fetchall_arrayref> method,
+when it is passed an empty hash ref. The patch is included here as 
+DBI.pm.diff, because it is required to make the driver work with 
+C<DBIx::Tree> 0.91. Yuri Vasiliev <I<yuri.vasiliev@targuscom.com>> reported 
+successful usage with Apache::AuthDBI (part of C<Apache::DBI> 0.87 
+distribution).
+
+The driver is untested with C<Apache::Session::DBI>. Doesn't work with 
+C<Tie::DBI>. C<Tie::DBI> calls $dbh->prepare("LISTFIELDS $table_name") on 
+which InterBase fails to parse. I think that the call should be made within 
+an eval block.
+
+=head2 Tested Platforms
+
+Client: Linux, glibc-2.1.2, x86 egcs-1.1.2, kernel 2.2.12-20. 
+Server: InterBase 6.0 SS and Classic for Linux, InterBase 6.0 for Windows.
 
 =head1 AUTHOR
 
-Copyright (c) 1999 Edwin Pratomo <ed.pratomo@computer.org>.
+=item * DBI by Tim Bunce <Tim.Bunce@ig.co.uk>
 
-All rights reserved. This is a B<free code>, available as-is;
-you can redistribute it and/or modify it under the same terms as Perl itself.
+=item * DBD::InterBase by Edwin Pratomo <ed.pratomo@computer.org>
+
+Partially based on the work of Bill Karwin's IBPerl, Jochen Wiedmann's
+DBD::mysql, and Edmund Mergl's DBD::Pg.
 
 =head1 SEE ALSO
 
-DBI(3), IBPerl(1).
+DBI(3).
+
+=head1 COPYRIGHT
+
+The DBD::InterBase module is a free software. 
+You may distribute under the terms of either the GNU General Public
+License or the Artistic License, as specified in the Perl README file,
+with the exception that it cannot be placed on a CD-ROM or similar media
+for commercial distribution without the prior approval of the author.
+
+=head1 ACKNOWLEDGEMENTS
+
+Mark D. Anderson <I<mda@discerning.com>>, and Michael Samanov
+<I<samanov@yahoo.com>> gave important feedbacks and ideas during the early
+development days of this XS version. 
+
+Michael Arnett <I<marnett@mediaone.net>>, Flemming Frandsen <I<dion@swamp.dk>>,
+Mike Shoyher <I<msh@e-labs.ru>>, Christiaan Lademann <I<cal@zls.de>> sent me 
+patches for the first version. Their code are still used in the current
+version, with or without some modification.
 
 =cut
