@@ -3,14 +3,14 @@
 for (qw[test.conf t/test.conf]) {
 	if (-r $_) {
 		open F, $_ or die "Can't open $_: $!";
-		($test_dsn, $test_user, $test_password) = map {chomp;$_} <F>;
+		($::test_dsn, $::test_user, $::test_password) = map {chomp;$_} <F>;
 		close F;
 	}
 }
 
-$test_dsn      ||= $ENV{'DBI_DSN'};
-$test_user     ||= $ENV{'DBI_USER'};
-$test_password ||= $ENV{'DBI_PASS'};
+$::test_dsn      ||= $ENV{'DBI_DSN'};
+$::test_user     ||= $ENV{'DBI_USER'};
+$::test_password ||= $ENV{'DBI_PASS'};
 
 #   This function generates a mapping of ANSI type names to
 #   database specific type names; it is called by TableDefinition().
@@ -80,6 +80,7 @@ sub TableDefinition ($@) {
 	if (!($$col[3] & $::COL_NULLABLE)) {
 	    $colDef .= " NOT NULL";
 	}
+	$colDef .= (' ' . $$col[4]) if $$col[4];
 	push(@colDefs, $colDef);
     }
     if (@keys) {

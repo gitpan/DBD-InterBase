@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40cursor.t,v 1.1 2001/03/22 05:52:13 edpratomo Exp $
+#   $Id: 40cursor.t,v 1.2 2004/12/04 17:17:11 danielritz Exp $
 #
 #   This is a test for CursorName attribute.
 #
@@ -137,7 +137,7 @@ while (Testing()) {
     or DbiError($dbh->err, $dbh->errstr);
 
     #  NUM_OF_FIELDS should be zero (Non-Select)
-    Test($state or ($cursor->{'NUM_OF_FIELDS'} == 0))
+    Test($state or (!$cursor->{'NUM_OF_FIELDS'}))
     or !$verbose or printf("NUM_OF_FIELDS is %s, not zero.\n",
                    $cursor->{'NUM_OF_FIELDS'});
 

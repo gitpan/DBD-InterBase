@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 30insertfetch.t,v 1.3 2001/04/19 14:56:06 edpratomo Exp $
+#   $Id: 30insertfetch.t,v 1.4 2005/01/13 23:32:28 danielritz Exp $
 #
 #   This is a simple insert/fetch test.
 #
@@ -98,6 +98,31 @@ while (Testing()) {
        or DbiError($cursor->err, $cursor->errstr);
 
     Test($state or undef $cursor || 1);
+
+    #
+    #   insert two new rows
+    #
+    Test($state or $dbh->do("INSERT INTO $table"
+                . " VALUES(1, 'Edwin Pratomo')"))
+       or DbiError($dbh->err, $dbh->errstr);
+    Test($state or $dbh->do("INSERT INTO $table"
+                . " VALUES(2, 'Daniel Ritz')"))
+       or DbiError($dbh->err, $dbh->errstr);
+
+    #
+    #   try selectrow_array
+    #
+    Test($state or @array = $dbh->selectrow_array("SELECT * FROM $table"
+                       . " WHERE id = 1"))
+       or DbiError($dbh->err, $dbh->errstr);
+    Test($state or (@array == 2) or DbiError(0, "selectrow_array returned incorrect column count"));
+
+    #
+    #   try fetchall_hashref
+    #
+    Test($state or $hash = $dbh->selectall_hashref("SELECT * FROM $table", 'ID'))
+       or DbiError($dbh->err, $dbh->errstr);
+    Test($state or (defined $hash) or DbiError(0, "selectall_hashref returned undef"));
 
 
     #

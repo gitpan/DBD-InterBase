@@ -1,6 +1,6 @@
-#   $Id: InterBase.pm,v 1.49 2004/02/25 04:38:03 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.55 2005/09/12 03:22:57 edpratomo Exp $
 #
-#   Copyright (c) 1999-2004 Edwin Pratomo
+#   Copyright (c) 1999-2005 Edwin Pratomo
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -14,12 +14,12 @@ use strict;
 use Carp;
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
-use DBI ();
+use DBI 1.41 ();
 require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.43';
+$VERSION = '0.44';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -28,6 +28,13 @@ use vars qw($VERSION $err $errstr $drh);
 $err = 0;
 $errstr = "";
 $drh = undef;
+
+
+sub CLONE
+{
+    $drh = undef;
+}
+
 
 sub driver
 {
@@ -144,7 +151,6 @@ sub do
     ($rows == 0) ? "0E0" : $rows;
 }
 
-
 sub prepare 
 {
     my ($dbh, $statement, $attribs) = @_;
@@ -154,55 +160,6 @@ sub prepare
         or return undef;
     $sth;
 }
-
-# from Christiaan Lademann <cal@zls.de> :
-
-sub type_info_all {
-    my $dbh = shift;
-    my $names = {
-        TYPE_NAME               => 0,
-        DATA_TYPE               => 1,
-        COLUMN_SIZE             => 2,
-        LITERAL_PREFIX          => 3,
-        LITERAL_SUFFIX          => 4,
-        CREATE_PARAMS           => 5,
-        NULLABLE                => 6,
-        CASE_SENSITIVE          => 7,
-        SEARCHABLE              => 8,
-        UNSIGNED_ATTRIBUTE      => 9,
-        FIXED_PREC_SCALE        =>10,
-        AUTO_UNIQUE_VALUE       =>11,
-        LOCAL_TYPE_NAME         =>12,
-        MINIMUM_SCALE           =>13,
-        MAXIMUM_SCALE           =>14,
-        SQL_DATA_TYPE           =>15,
-        SQL_DATETIME_SUB        =>16,       
-        NUM_PREC_RADIX          =>17,
-        INTERVAL_PRECISION      =>18,
-    };
-
-    my $ti = [
-        $names,
-        # type-name            data-type           size   prefix suffix  create-params      null case srch, unsg   fix  auto local               min    max    sql-data-type       sql-datetime-sub num-prec-radix  int-prec
-        [ 'BLOB',              0,                  64536, undef, undef,  undef,             1,   1,   0,    undef, 0,   0,   'BLOB',             undef, undef, 0,                  undef,           undef,          undef ],
-        [ 'CHAR',              DBI::SQL_CHAR,      32765, '\'',  '\'',   undef,             1,   1,   3,    undef, 0,   0,   'CHAR',             undef, undef, DBI::SQL_CHAR,      undef,           undef,          undef ],
-        [ 'CHARACTER',         DBI::SQL_CHAR,      32765, '\'',  '\'',   undef,             1,   1,   3,    undef, 0,   0,   'CHAR',             undef, undef, DBI::SQL_CHAR,      undef,           undef,          undef ],
-        [ 'DATE',              DBI::SQL_DATE,      10,    '\'',  '\'',   undef,             1,   0,   2,    undef, 0,   0,   'DATE',             undef, undef, DBI::SQL_DATE,      undef,           undef,          undef ],
-        [ 'DECIMAL',           DBI::SQL_DECIMAL,   20,    undef, undef,  'precision,scale', 1,   0,   2,    0,     0,   0,   'DECIMAL',          0,     18,    DBI::SQL_DECIMAL,   undef,           10,             undef ],
-        [ 'DOUBLE PRECISION',  DBI::SQL_DOUBLE,    64,    undef, undef,  undef,             1,   0,   2,    0,     0,   0,   'DOUBLE PRECISION', undef, undef, DBI::SQL_DOUBLE,    undef,           2,              undef ],
-        [ 'FLOAT',             DBI::SQL_FLOAT,     32,    undef, undef,  undef,             1,   0,   2,    0,     0,   0,   'FLOAT',            undef, undef, DBI::SQL_FLOAT,     undef,           2,              undef ],
-        [ 'INTEGER',           DBI::SQL_INTEGER,   32,    undef, undef,  undef,             1,   0,   2,    0,     1,   0,   'INTEGER',          0,     0,     DBI::SQL_INTEGER,   undef,           2,              undef ],
-        [ 'NUMERIC',           DBI::SQL_NUMERIC,   20,    undef, undef,  'precision,scale', 1,   0,   2,    0,     0,   0,   'NUMERIC',          0,     18,    DBI::SQL_NUMERIC,   undef,           10,             undef ],
-        [ 'SMALLINT',          DBI::SQL_SMALLINT,  16,    undef, undef,  undef,             1,   0,   2,    undef, 1,   0,   'SMALLINT',         0,     0,     DBI::SQL_SMALLINT,  undef,           2,              undef ],
-        [ 'TIME',              DBI::SQL_TIME,      64,    '\'',  '\'',   undef,             1,   0,   2,    undef, 1,   0,   'TIME',             4,     4,     DBI::SQL_TIME,      undef,           2,              undef ],
-        [ 'TIMESTAMP',         DBI::SQL_TIMESTAMP, 64,    '\'',  '\'',   undef,             1,   0,   2,    undef, 1,   0,   'TIMESTAMP',        4,     4,     DBI::SQL_TIMESTAMP, undef,           2,              undef ],
-        [ 'VARCHAR',           DBI::SQL_VARCHAR,   32765, '\'',  '\'',   'length',          1,   1,   3,    undef, 0,   0,   'VARCHAR',          undef, undef, DBI::SQL_VARCHAR,   undef,           undef,          undef ],
-        [ 'CHAR VARYING',      DBI::SQL_VARCHAR,   32765, '\'',  '\'',   'length',          1,   1,   3,    undef, 0,   0,   'VARCHAR',          undef, undef, DBI::SQL_VARCHAR,   undef,           undef,          undef ],
-        [ 'CHARACTER VARYING', DBI::SQL_VARCHAR,   32765, '\'',  '\'',   'length',          1,   1,   3,    undef, 0,   0,   'VARCHAR',          undef, undef, DBI::SQL_VARCHAR,   undef,           undef,          undef ],
-       ];
-       return $ti;
-}
-
 
 # from Michael Arnett <marnett@samc.com> :
 sub tables
@@ -265,13 +222,26 @@ sub ping
     return $ret;
 }
 
+# The get_info function was automatically generated by
+# DBI::DBD::Metadata::write_getinfo_pm v1.05.
+
 sub get_info {
-    my ($dbh, $info_type) = @_;
+    my($dbh, $info_type) = @_;
     require DBD::InterBase::GetInfo;
     my $v = $DBD::InterBase::GetInfo::info{int($info_type)};
     $v = $v->($dbh) if ref $v eq 'CODE';
     return $v;
-} 
+}
+
+# The type_info_all function was automatically generated by
+# DBI::DBD::Metadata::write_typeinfo_pm v1.05.
+
+sub type_info_all
+{
+    my ($dbh) = @_;
+    require DBD::InterBase::TypeInfo;
+    return [ @$DBD::InterBase::TypeInfo::type_info_all ];
+}
 
 1;
 
@@ -805,9 +775,7 @@ Not supported by the driver.
 
 =back
 
-=head1 DRIVER SPECIFIC INFORMATION
-
-=head2 Transactions
+=head1 TRANSACTION SUPPORT
 
 The transaction behavior is controlled with the attribute AutoCommit. 
 For a complete definition of AutoCommit please refer to the DBI documentation. 
@@ -905,7 +873,7 @@ transaction parameters to the default value.
 
 =back
 
-=head2 DATE, TIME, and TIMESTAMP Formats
+=head1 DATE, TIME, and TIMESTAMP FORMATTING SUPPORT
 
 C<DBD::InterBase> supports various formats for query results of DATE, TIME,
 and TIMESTAMP types. 
@@ -952,9 +920,14 @@ once. Example:
  $dbh->{ib_time_all} = 'TM';
 
 
-=head2 Using Event Alerter
+=head1 EVENT ALERT SUPPORT
 
-This new feature is experimental and subjects to change. 
+Event alerter is used to notify client applications whenever something is
+happened on the database. For this to work, a trigger should be created,
+which then calls POST_EVENT to post the event notification to the interested
+client. A client could behave in two ways: wait for the event synchronously,
+or register a callback which will be invoked asynchronously each time a
+posted event received.
 
 =over
 
@@ -962,29 +935,55 @@ This new feature is experimental and subjects to change.
 
  $evh = $dbh->func(@event_names, 'ib_init_event');
 
-Initialize an event handle from several event names.
+Creates an event handle from a list of event names. 
 
 =item C<ib_wait_event>
 
  $dbh->func($evh, 'ib_wait_event');
 
 Wait synchronously for particular events registered via event handle $evh.
+Returns a hashref containing pair(s) of posted event's name and its corresponding count,
+or undef on failure.
 
 =item C<ib_register_callback>
 
- $dbh->func($evh, sub { print "callback..\n" }, 'ib_register_callback');
+ my $cb = sub { my $posted_events = $_[0]; ++$::COUNT < 6 };
+ $dbh->func($evh, $cb, 'ib_register_callback');
 
-Register a callback for asynchronous wait.
+ sub inc_count { my $posted_events = shift; ++$::COUNT < 6 };
+ $dbh->func($evh, \&inc_count, 'ib_register_callback');
 
-=item C<ib_reinit_event>
+ # or anonyomus subroutine
+ $dbh->func(
+   $evh, 
+   sub { my ($pe) = @_; ++$::COUNT < 6 }, 
+   'ib_register_callback'
+ );
 
- $dbh->func($evh, 'ib_reinit_event');
+Associates an event handle with an asynchronous callback. A callback will be
+passed a hashref as its argument, this hashref contains pair(s) of posted event's name
+and its corresponding count. 
 
-Reinitialize event handle.
+It is safe to call C<ib_register_callback> multiple times for the same event handle. In this 
+case, the previously registered callback will be automatically cancelled.
+
+If the callback returns FALSE, the registered callback will be no longer invoked, but internally
+it is still there until the event handle goes out of scope (or undef-ed), or you call 
+C<ib_cancel_callback> to actually disassociate it from the event handle.
+
+=item C<ib_cancel_callback>
+
+ $dbh->func($evh, 'ib_cancel_callback');
+
+Unregister a callback from an event handle. This function has a limitation,
+however, that it can't be called from inside a callback. In many cases, you won't
+need this function, since when an event handle goes out of scope, its associated callback(s)
+will be automatically cancelled before it is cleaned up. 
+
 
 =back
 
-=head2 Retrieving Firebird/InterBase specific information
+=head1 RETRIEVING FIREBIRD / INTERBASE SPECIFIC INFORMATION
 
 =over
 
@@ -1006,17 +1005,8 @@ Retrieve query plan from a prepared SQL statement.
 
 =back
 
-=head2 Obsolete Features
 
-=over 
-
-=item Private Method
-
-C<set_tx_param()> is obsoleted by C<ib_set_tx_param()>.
-
-=back
-
-=head2 Unsupported SQL Statements
+=head1 UNSUPPORTED SQL STATEMENTS
 
 Here is a list of SQL statements which can't be used. But this shouldn't be a 
 problem, because their functionality are already provided by the DBI methods.
@@ -1051,7 +1041,7 @@ fetch() methods.
 
 =back
 
-=head2 Compatibility with DBI Extension modules 
+=head1 COMPATIBILITY WITH DBIx::* MODULES 
 
 C<DBD::InterBase> is known to work with C<DBIx::Recordset> 0.21, and
 C<Apache::DBI> 0.87. Yuri Vasiliev <I<yuri.vasiliev@targuscom.com>> reported 
@@ -1063,9 +1053,211 @@ C<Tie::DBI>. C<Tie::DBI> calls $dbh->prepare("LISTFIELDS $table_name") on
 which InterBase fails to parse. I think that the call should be made within 
 an eval block.
 
+=head1 FAQ
+
+=head2 Why do some operations performing positioned update and delete fail when AutoCommit is on? 
+
+For example, the following code snippet fails:
+
+ $sth = $dbh->prepare(
+ "SELECT * FROM ORDERS WHERE user_id < 5 FOR UPDATE OF comment");
+ $sth->execute;
+ while (@res = $sth->fetchrow_array) {
+     $dbh->do("UPDATE ORDERS SET comment = 'Wonderful' WHERE 
+     CURRENT OF $sth->{CursorName}");
+ }
+
+When B<AutoCommit is on>, a transaction is started within prepare(), and
+committed automatically after the last fetch(), or within finish(). Within
+do(), a transaction is started right before the statement is executed, and
+gets committed right after the statement is executed. The transaction handle
+is stored within the database handle. The driver is smart enough not to
+override an active transaction handle with a new one. So, if you notice the
+snippet above, after the first fetchrow_array(), the do() is still using the
+same transaction context, but as soon as it has finished executing the statement, it
+B<commits> the transaction, whereas the next fetchrow_array() still needs
+the transaction context!
+
+So the secret to make this work is B<to keep the transaction open>. This can be
+done in two ways:
+
+=over 4
+
+=item * Using AutoCommit = 0
+
+If yours is default to AutoCommit on, you can put the snippet within a block:
+
+ {
+     $dbh->{AutoCommit} = 0;
+     # same actions like above ....
+     $dbh->commit;
+ }
+
+=item * Using $dbh->{ib_softcommit} = 1
+
+This driver-specific attribute is available as of version 0.30. You may want
+to look at t/40cursoron.t to see it in action.
+
+=back
+
+=head2 Why do nested statement handles break under AutoCommit mode?
+
+The same explanation as above applies. The workaround is also
+much alike:
+
+ {
+     $dbh->{AutoCommit} = 0;
+     $sth1 = $dbh->prepare("SELECT * FROM $table");
+     $sth2 = $dbh->prepare("SELECT * FROM $table WHERE id = ?");
+     $sth1->execute;
+
+     while ($row = $sth1->fetchrow_arrayref) {
+        $sth2->execute($row->[0]);
+        $res = $sth2->fetchall_arrayref;
+     }
+     $dbh->commit;
+ }
+
+You may also use $dbh->{ib_softcommit} introduced in version 0.30, please consult
+t/70nestedon.t for an example on how to use it.
+
+=head2 Why do placeholders fail to bind, generating unknown datatype error message?
+
+You can't bind a field name. The following example will fail:
+
+ $sth = $dbh->prepare("SELECT (?) FROM $table");
+ $sth->execute('user_id');
+
+There are cases where placeholders can't be used in conjunction with COLLATE
+clause, such as this:
+
+ SELECT * FROM $table WHERE UPPER(author) LIKE UPPER(? COLLATE FR_CA);
+
+This deals with the InterBase's SQL parser, not with C<DBD::InterBase>. The
+driver just passes SQL statements through the engine.
+
+
+=head2 How to do automatic increment for a specific field?
+
+Create a generator and a trigger to associate it with the field. The
+following example creates a generator named PROD_ID_GEN, and a trigger for
+table ORDERS which uses the generator to perform auto increment on field
+PRODUCE_ID with increment size of 1.
+
+ $dbh->do("CREATE GENERATOR PROD_ID_GEN");
+ $dbh->do(
+ "CREATE TRIGGER INC_PROD_ID FOR ORDERS
+ BEFORE INSERT POSITION 0
+ AS BEGIN
+   NEW.PRODUCE_ID = GEN_ID(PROD_ID_GEN, 1);
+ END");
+
+
+=head2 How can I perform LIMIT clause as I usually do in MySQL?
+
+C<LIMIT> clause let users to fetch only a portion rather than the whole 
+records as the result of a query. This is particularly efficient and useful 
+for paging feature on web pages, where users can navigate back and forth 
+between pages. 
+
+Using InterBase (Firebird is explained later), this can be emulated by writing a
+stored procedure. For example, to display a portion of table_forum, first create 
+the following procedure:
+
+ CREATE PROCEDURE PAGING_FORUM (start INTEGER, num INTEGER)
+ RETURNS (id INTEGER, title VARCHAR(255), ctime DATE, author VARCHAR(255))
+ AS 
+ DECLARE VARIABLE counter INTEGER;
+ BEGIN
+   counter = 0;
+   FOR SELECT id, title, ctime, author FROM table_forum ORDER BY ctime
+      INTO :id, :title, :ctime, :author
+   DO
+   BEGIN
+      IF (counter = :start + :num) THEN EXIT;
+      ELSE
+         IF (counter >= :start) THEN SUSPEND;
+      counter = counter + 1;          
+   END
+ END !!
+ SET TERM ; !!
+
+And within your application:
+
+ # fetch record 1 - 5:
+ $res = $dbh->selectall_arrayref("SELECT * FROM paging_forum(0,5)");
+
+ # fetch record 6 - 10: 
+ $res = $dbh->selectall_arrayref("SELECT * FROM paging_forum(5,5)");
+
+But never expect this to work:
+
+ $sth = $dbh->prepare(<<'SQL');
+ EXECUTE PROCEDURE paging_forum(5,5) 
+ RETURNING_VALUES :id, :title, :ctime, :author
+ SQL
+
+With Firebird 1 RCx and later, you can use C<SELECT FIRST>:
+
+ SELECT FIRST 10 SKIP 30 * FROM table_forum;
+
+C<FIRST x> and C<SKIP x> are both optional. C<FIRST> limits the number of
+rows to return, C<SKIP> ignores (skips) the first x rows in resultset. 
+
+
+=head2 How can I use the date/time formatting attributes?
+
+Those attributes take the same format as the C function strftime()'s.
+Examples:
+
+ $attr = {
+    ib_timestampformat => '%m-%d-%Y %H:%M',
+    ib_dateformat => '%m-%d-%Y',
+    ib_timeformat => '%H:%M',
+ };
+
+Then, pass it to prepare() method. 
+
+ $sth = $dbh->prepare($stmt, $attr);
+ # followed by execute() and fetch(), or:
+
+ $res = $dbh->selectall_arrayref($stmt, $attr);
+
+
+=head2 Can I set the date/time formatting attributes between prepare and fetch?
+
+No. C<ib_dateformat>, C<ib_timeformat>, and C<ib_timestampformat> can only
+be set during $sth->prepare. If this is a problem to you, let me know, and
+probably I'll add this capability for the next release.
+
+
+=head2 Can I change ib_dialect after DBI->connect ?
+
+No. If this is a problem to you, let me know, and probably I'll add this 
+capability for the next release.
+
+
+=head2 Why do execute(), do() method and rows() method always return -1 upon 
+a successful operation?
+
+Incorrect question. $sth->rows returns the number of fetched rows after a
+successful SELECT. Starting from version 0.43, execute() method returns the
+number of affected rows. But it's true that do() method returns -1, this
+will change in future release.
+
+=head1 OBSOLETE FEATURES
+
+=over 
+
+=item Private Method
+
+C<set_tx_param()> is obsoleted by C<ib_set_tx_param()>.
+
+=back
+
 =head1 TESTED PLATFORMS
 
-=head2 Client
+=head2 Clients
 
 =over 4
 
@@ -1079,7 +1271,7 @@ an eval block.
 
 =back
 
-=head2 Server
+=head2 Servers
 
 =over 4
 
@@ -1089,9 +1281,7 @@ an eval block.
 
 =item Firebird 1.0 Final SS for Windows, Linux, SPARC Solaris
 
-=item Firebird 1.5 RC7 for Windows, Linux
-
-=item Firebird 1.5 Final for Linux
+=item Firebird 1.5 RC7, 1.5, 1.5.x for Linux, Win32
 
 =back
 
@@ -1110,7 +1300,15 @@ This module is originally based on the work of Bill Karwin's IBPerl.
 
 =head1 BUGS/LIMITATIONS
 
-No bugs known at this time. But there are some limitations:
+This module doesn't work with MSWin32 ActivePerl iThreads, and its emulated fork. Tested
+with MSWin32 ActivePerl build 809 (Perl 5.8.3). The whole process will block in unpredictable
+manner. 
+
+Under Linux, this module has been tested with several different iThreads enabled Perl releases: 
+perl-5.8.0-88 from RedHat 9, perl-5.8.5-9 from Fedora Core 3, perl-5.8.6-15 from Fedora Core 4, and Perl 5.8.7. 
+No problem occurred so far.. until you try to share a DBI handle ;-)
+
+Limitations:
 
 =over 4
 
@@ -1127,8 +1325,8 @@ DBI(3).
 
 =head1 COPYRIGHT
 
-The DBD::InterBase module is Copyright (c) 1999-2004 Edwin Pratomo.
-Portions Copyright (c) 2001-2003  Daniel Ritz.
+The DBD::InterBase module is Copyright (c) 1999-2005 Edwin Pratomo.
+Portions Copyright (c) 2001-2005 Daniel Ritz.
 
 The DBD::InterBase module is free software. 
 You may distribute under the terms of either the GNU General Public

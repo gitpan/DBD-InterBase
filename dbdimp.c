@@ -1,8 +1,8 @@
 /*
-   $Id: dbdimp.c,v 1.105 2004/02/25 04:38:03 edpratomo Exp $
+   $Id: dbdimp.c,v 1.114 2005/09/12 03:18:47 edpratomo Exp $
 
-   Copyright (c) 1999-2004  Edwin Pratomo
-   Portions Copyright (c) 2001-2003  Daniel Ritz
+   Copyright (c) 1999-2005  Edwin Pratomo
+   Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -43,7 +43,7 @@ do {                                                         \
         do_error(sth, 2, "Fail to allocate XSQLDA");         \
     memset(sqlda, 0, XSQLDA_LENGTH(len));                    \
     sqlda->sqln = len;                                       \
-    sqlda->version = SQLDA_VERSION1;                         \
+    sqlda->version = SQLDA_OK_VERSION;                         \
 } while (0)
 
 
@@ -68,7 +68,7 @@ int create_cursor_name(SV *sth, imp_sth_t *imp_sth)
 
 void dbd_init(dbistate_t *dbistate)
 {
-    DBIS = dbistate;
+    DBISTATE_INIT;
 }
 
 
@@ -108,14 +108,12 @@ void do_error(SV *h, int rc, char *what)
     D_imp_xxh(h);
     SV *errstr = DBIc_ERRSTR(imp_xxh);
 
-    DBI_TRACE(2, (DBILOGFP, "Entering do_error"));
-
     sv_setiv(DBIc_ERR(imp_xxh), (IV)rc);
     sv_setpv(errstr, what);
-    DBIh_EVENT2(h, ERROR_event, DBIc_ERR(imp_xxh), errstr);
 
-    DBI_TRACE(2, (DBILOGFP, "%s error %d recorded: %s\n", what, rc,
-                  SvPV(errstr,na)));
+    if (DBIc_TRACE_LEVEL(imp_xxh) >= 2)
+        PerlIO_printf(DBIc_LOGPIO(imp_xxh), "%s error %d recorded: %s\n", 
+            what, rc, SvPV(errstr,na));
 }
 
 
@@ -367,7 +365,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     /* add length of other parameters to needed buflen */
     buflen += 1 + 5; /* dbpversion + sqlkeyscope */
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_login6\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_login6\n"));
 
     /* Allocate DPB */
     if ((dpb_buffer = (char *) safemalloc(buflen * sizeof(char))) == NULL)
@@ -422,8 +420,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
 
     dpb_length = dpb - dpb_buffer;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_db_login6: attaching to database %s..\n",
-                  database));
+    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_login6: attaching to database %s..\n", database));
 
     isc_attach_database(status,           /* status vector */
                         0,                /* connect string is null-terminated */
@@ -439,7 +436,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     if (ib_error_check(dbh, status))
         return FALSE;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_db_login6: success attaching.\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_login6: success attaching.\n"));
 
     /* Tell DBI, that dbh->destroy should be called for this handle */
     DBIc_IMPSET_on(imp_dbh);
@@ -465,7 +462,7 @@ int dbd_db_ping(SV *dbh)
 
     char buffer[100];
 
-    DBI_TRACE(1, (DBILOGFP, "dbd_db_ping\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 1, (DBIc_LOGPIO(imp_dbh), "dbd_db_ping\n"));
 
     if (isc_database_info(status, &(imp_dbh->db), 0, NULL, sizeof(buffer), buffer))
         if (ib_error_check(dbh, status))
@@ -479,7 +476,7 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
     dTHR;
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_disconnect\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_disconnect\n"));
 
     /* set the database handle to inactive */
     DBIc_ACTIVE_off(imp_dbh);
@@ -516,7 +513,7 @@ int dbd_db_disconnect(SV *dbh, imp_dbh_t *imp_dbh)
 
 void dbd_db_destroy (SV *dbh, imp_dbh_t *imp_dbh)
 {
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_destroy\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_destroy\n"));
 
     if (DBIc_ACTIVE(imp_dbh))
         dbd_db_disconnect(dbh, imp_dbh);
@@ -528,7 +525,7 @@ void dbd_db_destroy (SV *dbh, imp_dbh_t *imp_dbh)
 
 int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
 {
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_commit\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_commit\n"));
 
     /* no commit if AutoCommit on */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit))
@@ -538,7 +535,7 @@ int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
     if (!ib_commit_transaction(dbh, imp_dbh))
         return FALSE;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_db_commit succeed.\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_commit succeed.\n"));
 
     return TRUE;
 }
@@ -546,7 +543,7 @@ int dbd_db_commit (SV *dbh, imp_dbh_t *imp_dbh)
 
 int dbd_db_rollback(SV *dbh, imp_dbh_t *imp_dbh)
 {
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_rollback\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_rollback\n"));
 
     /* no rollback if AutoCommit = on */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit) != FALSE)
@@ -556,7 +553,7 @@ int dbd_db_rollback(SV *dbh, imp_dbh_t *imp_dbh)
     if (!ib_rollback_transaction(dbh, imp_dbh))
         return FALSE;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_db_rollback succeed.\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_rollback succeed.\n"));
 
     return TRUE;
 }
@@ -570,7 +567,7 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
     int  oldval;
     int  set_frmts = 0;
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_STORE - %s\n", key));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_STORE - %s\n", key));
 
     /**************************************************************************/
     if ((kl==10) && strEQ(key, "AutoCommit"))
@@ -578,8 +575,7 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
         oldval = DBIc_has(imp_dbh, DBIcf_AutoCommit)? 1: 0;
         DBIc_set(imp_dbh, DBIcf_AutoCommit, on);
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: switch AutoCommit from %d to %d\n",
-                      oldval, on));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_STORE: switch AutoCommit from %d to %d\n", oldval, on));
 
         if (oldval == FALSE && on)
         {
@@ -589,7 +585,7 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
                 if (!ib_commit_transaction(dbh, imp_dbh))
                     return FALSE;
 
-                    DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: commit open transaction\n"));
+                    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_STORE: commit open transaction\n"));
             }
         }
 
@@ -600,8 +596,7 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
     {
         oldval = imp_dbh->soft_commit;
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: switch ib_softcommit from %d to %d\n",
-                      oldval, on));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_STORE: switch ib_softcommit from %d to %d\n", oldval, on));
 
         /* set new value */
         imp_dbh->soft_commit = on;
@@ -614,7 +609,7 @@ int dbd_db_STORE_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv, SV *valuesv)
                 if (!ib_commit_transaction(dbh, imp_dbh))
                     return FALSE;
 
-                DBI_TRACE(3, (DBILOGFP, "dbd_db_STORE: commit open transaction\n"));
+                DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_db_STORE: commit open transaction\n"));
             }
         }
         return TRUE; /* handled */
@@ -653,7 +648,7 @@ SV *dbd_db_FETCH_attrib(SV *dbh, imp_dbh_t *imp_dbh, SV *keysv)
     char *  key = SvPV(keysv, kl);
     SV *    result = NULL;
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_db_FETCH - %s\n", key));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_FETCH - %s\n", key));
 
     if ((kl==10) && strEQ(key, "AutoCommit"))
         result = boolSV(DBIc_has(imp_dbh, DBIcf_AutoCommit));
@@ -685,7 +680,7 @@ void dbd_preparse(SV *sth, imp_sth_t *imp_sth, char *statement)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    DBI_TRACE(2, (DBILOGFP, "Enter dbd_preparse\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "Enter dbd_preparse\n"));
 
     isc_dsql_describe_bind(status, &(imp_sth->stmt), 1, imp_sth->in_sqlda);
 
@@ -716,7 +711,7 @@ void dbd_preparse(SV *sth, imp_sth_t *imp_sth, char *statement)
         }
     }
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_preparse: describe_bind passed.\n"
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_preparse: describe_bind passed.\n"
                   "dbd_preparse: exit; in_sqlda: sqld: %d, sqln: %d.\n",
                       imp_sth->in_sqlda->sqld, imp_sth->in_sqlda->sqln));
 
@@ -734,7 +729,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     char        info_buffer[20], count_item;
     XSQLVAR     *var;
 
-    DBI_TRACE(2, (DBILOGFP, "Enter dbd_st_prepare\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "Enter dbd_st_prepare\n"));
 
     if (!DBIc_ACTIVE(imp_dbh))
     {
@@ -813,8 +808,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         return FALSE;
     }
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: sqldialect: %d.\n",
-                  imp_dbh->sqldialect));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: sqldialect: %d.\n", imp_dbh->sqldialect));
 
     if (!imp_dbh->tr)
     {
@@ -826,7 +820,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         }
     }
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: statement: %s.\n", statement));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: statement: %s.\n", statement));
 
     isc_dsql_prepare(status, &(imp_dbh->tr), &(imp_sth->stmt), 0, statement,
                      imp_dbh->sqldialect, imp_sth->out_sqlda);
@@ -837,7 +831,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         return FALSE;
     }
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: isc_dsql_prepare succeed..\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: isc_dsql_prepare succeed..\n"));
 
     stmt_info[0] = isc_info_sql_stmt_type;
     isc_dsql_sql_info(status, &(imp_sth->stmt), sizeof (stmt_info), stmt_info,
@@ -855,8 +849,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     }
 
     /* sanity check of statement type */
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: statement type: %ld.\n",
-                  imp_sth->type));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: statement type: %ld.\n", imp_sth->type));
 
     switch (imp_sth->type)
     {
@@ -912,14 +905,14 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
     /* realloc in_sqlda where needed */
     dbd_preparse(sth, imp_sth, statement);
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: dbd_describe passed.\n"
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: dbd_describe passed.\n"
                             "out_sqlda: sqld: %d, sqln: %d.\n",
                             imp_sth->out_sqlda->sqld, imp_sth->out_sqlda->sqln));
 
     /* enough output parameter block ? */
     if (imp_sth->out_sqlda->sqld > imp_sth->out_sqlda->sqln)
     {
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: realloc out_sqlda..\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: realloc out_sqlda..\n"));
 
         IB_alloc_sqlda(imp_sth->out_sqlda, imp_sth->out_sqlda->sqld);
 
@@ -931,7 +924,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
         }
         else
         {
-            DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: calling isc_dsql_describe again..\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: calling isc_dsql_describe again..\n"));
 
             isc_dsql_describe(status, &(imp_sth->stmt), 1, imp_sth->out_sqlda);
             if (ib_error_check(sth, status))
@@ -940,7 +933,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
                 return FALSE;
             }
 
-            DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: success calling isc_dsql_describe.\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: success calling isc_dsql_describe.\n"));
         }
     }
     else if (imp_sth->out_sqlda->sqld == 0) /* not a select statement */
@@ -958,10 +951,10 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
             dtype = (var->sqltype & ~1);
             var->sqlind = NULL;
 
-            DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: field type: %d.\n", dtype));
+            DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: field type: %d.\n", dtype));
 
             /* Alloc space for sqldata */
-            var->sqldata = (char *) safemalloc(var->sqllen +
+            var->sqldata = (char *) safemalloc(sizeof(char) * var->sqllen +
                            (dtype == SQL_VARYING ? sizeof(short) : 0));
             if (!var->sqldata)
             {
@@ -990,7 +983,7 @@ int dbd_st_prepare(SV *sth, imp_sth_t *imp_sth, char *statement, SV *attribs)
 
     imp_dbh->first_sth = imp_sth;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_prepare: sth inserted into linked list.\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_prepare: sth inserted into linked list.\n"));
 
     /* tell DBI that we have a real statement handle now */
     DBIc_IMPSET_on(imp_sth);
@@ -1002,21 +995,17 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
 {
     D_imp_dbh_from_sth;
     ISC_STATUS status[ISC_STATUS_LENGTH];
-    char       stmt_info[1], count_info[1];
-    char       info_buffer[20], count_buffer[33];
-    char       *p;
     int        result = -2;
     int        row_count = 0;
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_st_execute\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "dbd_st_execute\n"));
 
     /* if not already done: start new transaction */
     if (!imp_dbh->tr)
         if (!ib_start_transaction(sth, imp_dbh))
             return result;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: statement type: %ld.\n",
-                  imp_sth->type));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: statement type: %ld.\n", imp_sth->type));
 
     /* we count DDL statments */
     if (imp_sth->type == isc_info_sql_stmt_ddl)
@@ -1026,7 +1015,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
     /* exec procedure statement */
     if (imp_sth->type == isc_info_sql_stmt_exec_procedure)
     {
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: calling isc_dsql_execute2 (exec procedure)..\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: calling isc_dsql_execute2 (exec procedure)..\n"));
 
         isc_dsql_execute2(status, &(imp_dbh->tr), &(imp_sth->stmt),
                           imp_dbh->sqldialect,
@@ -1041,13 +1030,13 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
             return result;
         }
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: isc_dsql_execute2 succeed.\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: isc_dsql_execute2 succeed.\n"));
 
         imp_sth->fetched = 0;
     }
     else /* all other types of SQL statements */
     {
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: calling isc_dsql_execute..\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: calling isc_dsql_execute..\n"));
 
         /* check for valid in_sqlda */
         if (!imp_sth->in_sqlda)
@@ -1068,7 +1057,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
             return result;
         }
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: isc_dsql_execute succeed.\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: isc_dsql_execute succeed.\n"));
     }
 
     /* Jika AutoCommit On, commit_transaction() (bukan retaining),
@@ -1081,7 +1070,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
         && imp_sth->type != isc_info_sql_stmt_select_for_upd
         && imp_sth->type != isc_info_sql_stmt_exec_procedure)
     {
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: calling ib_commit_transaction..\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: calling ib_commit_transaction..\n"));
 
         if (!ib_commit_transaction(sth, imp_dbh))
         {
@@ -1089,7 +1078,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
             return result;
         }
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: ib_commit_transaction succeed.\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: ib_commit_transaction succeed.\n"));
     }
 
     /* Declare a unique cursor for this query */
@@ -1126,7 +1115,7 @@ int dbd_st_execute(SV *sth, imp_sth_t *imp_sth)
     } else 
         result = -1;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_execute: row count: %d.\n"
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_execute: row count: %d.\n"
                             "dbd_st_execute: count_item: %d.\n",
                             row_count, imp_sth->count_item));
 
@@ -1147,7 +1136,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
     int         i;          /* loop */
     short       dtype;
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_st_fetch\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "dbd_st_fetch\n"));
 
     if (!DBIc_ACTIVE(imp_sth))
     {
@@ -1177,7 +1166,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
          * of rows that the SELECT will return.
          */
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_fetch: fetch result: %d\n", fetch));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_fetch: fetch result: %d\n", fetch));
 
         if (imp_sth->fetched < 0)
             imp_sth->fetched = 0;
@@ -1190,7 +1179,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
             if (ib_error_check(sth, status))
                 return Nullav;
 
-            DBI_TRACE(3, (DBILOGFP, "isc_dsql_free_statement succeed.\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "isc_dsql_free_statement succeed.\n"));
 
             DBIc_ACTIVE_off(imp_sth); /* dbd_st_finish is no longer needed */
 
@@ -1200,7 +1189,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                 if (!ib_commit_transaction(sth, imp_dbh))
                     return Nullav;
 
-                DBI_TRACE(3, (DBILOGFP, "fetch ends: ib_commit_transaction succeed.\n"));
+                DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "fetch ends: ib_commit_transaction succeed.\n"));
             }
 
             return Nullav;
@@ -1348,8 +1337,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                  * overrun if I do!
                  */
 
-                    DBI_TRACE(3, (DBILOGFP, "Fill in TEXT type..\nLength: %d\n",
-                                  var->sqllen));
+                    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "Fill in TEXT type..\nLength: %d\n", var->sqllen));
 
                     if (chopBlanks && (var->sqllen > 0))
                     {
@@ -1388,7 +1376,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                 case SQL_TYPE_TIME:
 #endif
                 {
-                    char     *format, buf[100];
+                    char     *format = NULL, buf[100];
                     struct tm times;
                     int       fpsec;
 
@@ -1423,7 +1411,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                             break;
                     }
 
-                    DBI_TRACE(3, (DBILOGFP, "Decode passed.\n"));
+                    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "Decode passed.\n"));
 
 
                     /* hardcoded output format.... */
@@ -1485,7 +1473,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                         av_push(list, newSViv(times.tm_isdst));
 
                         /* value returned is a reference to the array */
-                        sv_setsv(sv, newRV_noinc((SV *) list));
+                        sv_setsv(sv, sv_2mortal(newRV_noinc((SV *) list)));
                         break;
                     }
 
@@ -1531,8 +1519,13 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     /* Open the Blob according to the Blob id. */
                     isc_open_blob2(status, &(imp_dbh->db), &(imp_dbh->tr),
                                    &blob_handle, (ISC_QUAD *) var->sqldata,
+#ifdef INCLUDE_FB_TYPES_H
+                                   (ISC_USHORT) 0,
+                                   (ISC_UCHAR) NULL);
+#else                                   
                                    (short) 0,       /* no Blob filter */
                                    (char *) NULL);  /* no Blob filter */
+#endif
 
                     if (ib_error_check(sth, status))
                         return FALSE;
@@ -1543,7 +1536,10 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                                   blob_info_buffer);
 
                     if (ib_error_check(sth, status))
+                    {
+                        isc_cancel_blob(status, &blob_handle);
                         return FALSE;
+                    }
 
                     /* Get the information out of the info buffer. */
                     for (p = blob_info_buffer; *p != isc_info_end; )
@@ -1565,7 +1561,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                         p += length;
                     }
 
-                    DBI_TRACE(3, (DBILOGFP,
+                    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth),
                                   "dbd_st_fetch: BLOB info - max_segment: %ld, total_length: %ld\n",
                                   max_segment, total_length));
 
@@ -1590,7 +1586,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     if ((DBIc_LongReadLen(imp_sth) < (unsigned long) total_length) &&
                         (! DBIc_is(imp_dbh, DBIcf_LongTruncOk)))
                     {
-                        isc_cancel_blob(status, &blob_handle);
+                        isc_close_blob(status, &blob_handle);
                         do_error(sth, 1, "Not enough LongReadLen buffer.");
                         return FALSE;
                         break;
@@ -1603,7 +1599,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                         sv_setpvn(sv, "** Blob exceeds maximum safe length **", 38);
 
                         /* I deliberately don't set FAILURE based on this. */
-                        isc_cancel_blob(status, &blob_handle);
+                        isc_close_blob(status, &blob_handle);
                         if (ib_error_check(sth, status))
                             return FALSE;
                         break;
@@ -1620,12 +1616,15 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                                                     (short) BLOB_SEGMENT,
                                                     blob_segment_buffer);
 
-                        if (status[1] != isc_segment)
-                            if (ib_error_check(sth, status))
-                                return FALSE;
-
                         if (status[1] == isc_segstr_eof)
                             break;
+
+                        if (status[1] != isc_segment)
+                            if (ib_error_check(sth, status))
+                            {
+                                isc_cancel_blob(status, &blob_handle);
+                                return FALSE;
+                            }
 
                         if (seg_length > DBIc_LongReadLen(imp_sth))
                              break;
@@ -1701,7 +1700,7 @@ int dbd_st_finish(SV *sth, imp_sth_t *imp_sth)
     D_imp_dbh_from_sth;
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_st_finish\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "dbd_st_finish\n"));
 
     if (!DBIc_ACTIVE(imp_sth)) /* already finished */
         return TRUE;
@@ -1713,7 +1712,7 @@ int dbd_st_finish(SV *sth, imp_sth_t *imp_sth)
     if (ib_error_check(sth, status))
         return FALSE;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_finish: isc_dsql_free_statement passed.\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "dbd_st_finish: isc_dsql_free_statement passed.\n"));
 
     /* set statement to inactive - must be before ib_commit_transaction 'cos
        commit can call dbd_st_finish function again */
@@ -1722,14 +1721,14 @@ int dbd_st_finish(SV *sth, imp_sth_t *imp_sth)
     /* if AutoCommit on */
     if (DBIc_has(imp_dbh, DBIcf_AutoCommit))
     {
-        DBI_TRACE(4, (DBILOGFP, "dbd_st_finish: Trying to call ib_commit_transaction.\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 4, (DBIc_LOGPIO(imp_sth), "dbd_st_finish: Trying to call ib_commit_transaction.\n"));
 
         if (!ib_commit_transaction(sth, imp_dbh))
         {
-            DBI_TRACE(4, (DBILOGFP, "dbd_st_finish: Call ib_commit_transaction finished returned FALSE.\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 4, (DBIc_LOGPIO(imp_sth), "dbd_st_finish: Call ib_commit_transaction finished returned FALSE.\n"));
             return FALSE;
         }
-        DBI_TRACE(4, (DBILOGFP, "dbd_st_finish: Call ib_commit_transaction succeded.\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 4, (DBIc_LOGPIO(imp_sth), "dbd_st_finish: Call ib_commit_transaction succeded.\n"));
     }
 
     return TRUE;
@@ -1741,14 +1740,10 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
     D_imp_dbh_from_sth;
     ISC_STATUS  status[ISC_STATUS_LENGTH];
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_st_destroy\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_st_destroy\n"));
 
     /* freeing cursor name */
-    if (imp_sth->cursor_name != NULL)
-    {
-        safefree(imp_sth->cursor_name);
-        imp_sth->cursor_name = NULL;
-    }
+    FREE_SETNULL(imp_sth->cursor_name);
 
     /* freeing in_sqlda */
     if (imp_sth->in_sqlda)
@@ -1756,7 +1751,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
         int i;
         XSQLVAR *var = imp_sth->in_sqlda->sqlvar;
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: found in_sqlda..\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_st_destroy: found in_sqlda..\n"));
 
         for (i = 0; i < imp_sth->in_sqlda->sqld; i++, var++)
         {
@@ -1764,7 +1759,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
             FREE_SETNULL(var->sqlind);
         }
 
-        DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: freeing in_sqlda..\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_st_destroy: freeing in_sqlda..\n"));
 
         safefree(imp_sth->in_sqlda);
         imp_sth->in_sqlda = NULL;
@@ -1797,10 +1792,10 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
         isc_dsql_free_statement(status, &(imp_sth->stmt), DSQL_drop);
         if (ib_error_check(sth, status))
         {
-            DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: isc_dsql_free_statement failed.\n"));
+            DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_st_destroy: isc_dsql_free_statement failed.\n"));
         }
         else
-            DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: isc_dsql_free_statement succeeded.\n"));
+            DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_st_destroy: isc_dsql_free_statement succeeded.\n"));
 
         imp_sth->stmt = 0L;
     }
@@ -1822,7 +1817,7 @@ void dbd_st_destroy(SV *sth, imp_sth_t *imp_sth)
     /* set next/prev to NULL */
     imp_sth->prev_sth = imp_sth->next_sth = NULL;
 
-    DBI_TRACE(3, (DBILOGFP, "dbd_st_destroy: sth removed from linked list.\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "dbd_st_destroy: sth removed from linked list.\n"));
 
 
     /* let DBI know we've done it */
@@ -1839,7 +1834,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
     /* Default to caching results for DBI dispatch quick_FETCH  */
     int cacheit = TRUE;
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_st_FETCH - %s\n", key));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "dbd_st_FETCH - %s\n", key));
 
     if (kl==13 && strEQ(key, "NUM_OF_PARAMS"))  /* handled by DBI */
         return Nullsv;
@@ -1924,7 +1919,7 @@ SV* dbd_st_FETCH_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv)
         av = newAV();
         result = newRV(sv_2mortal((SV*)av));
         while(--i >= 0)
-            av_store(av, i, boolSV(imp_sth->out_sqlda->sqlvar[i].sqltype & 1 != 0));
+            av_store(av, i, boolSV((imp_sth->out_sqlda->sqlvar[i].sqltype & 1) != 0));
     }
     /**************************************************************************/
     else if (kl==10 && strEQ(key, "CursorName"))
@@ -1953,33 +1948,8 @@ int dbd_st_STORE_attrib(SV *sth, imp_sth_t *imp_sth, SV *keysv, SV *valuesv)
     STRLEN  kl;
     char    *key = SvPV(keysv, kl);
 
-    DBI_TRACE(2, (DBILOGFP, "dbd_st_STORE - %s\n", key));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "dbd_st_STORE - %s\n", key));
 
-    if ((kl == 13) && (strcmp(key, "ib_cursorname") == 0))
-    {
-        if (DBIc_ACTIVE(imp_sth))
-        {
-            do_error(sth, 1, "Can't modify active statement cursor name.");
-            return FALSE;
-        }
-        else
-        {
-            STRLEN  vl;
-            char *value = SvPV(valuesv, vl);
-
-            if (imp_sth->cursor_name != NULL)
-            {
-                safefree(imp_sth->cursor_name);
-                imp_sth->cursor_name = NULL;
-            }
-            imp_sth->cursor_name = (char *)safemalloc(vl + 1);
-
-            if (imp_sth->cursor_name != NULL)
-                strcpy(imp_sth->cursor_name, value);
-            else
-                return FALSE;
-        }
-    }
     return FALSE;
 }
 
@@ -2011,7 +1981,7 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
     char            *p, *seg;
     int             is_text_blob, seg_len;
 
-    DBI_TRACE(2, (DBILOGFP, "ib_blob_write\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "ib_blob_write\n"));
 
     /* we need a transaction  */
     if (!imp_dbh->tr)
@@ -2044,7 +2014,7 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
     seg_len = BLOB_SEGMENT;
     while (total_length > 0)
     {
-        DBI_TRACE(3, (DBILOGFP, "ib_blob_write: %d bytes left\n", total_length));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "ib_blob_write: %d bytes left\n", total_length));
 
         /* set new segment start pointer */
         seg = p;
@@ -2079,7 +2049,7 @@ int ib_blob_write(SV *sth, imp_sth_t *imp_sth, XSQLVAR *var, SV *value)
             return FALSE;
         }
 
-        DBI_TRACE(3, (DBILOGFP, "ib_blob_write: %d bytes written\n", seg_len));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "ib_blob_write: %d bytes written\n", seg_len));
 
     }
 
@@ -2105,14 +2075,14 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     retval = TRUE;
     ivar = &(imp_sth->in_sqlda->sqlvar[i]);
 
-    DBI_TRACE(2, (DBILOGFP, "enter ib_fill_isqlda. processing %d XSQLVAR"
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "enter ib_fill_isqlda. processing %d XSQLVAR"
                             "   Type %ld"
                             " ivar->sqltype=%ld\n",
                             i + 1,
                             (long) sql_type,
                             ivar->sqltype));
 
-    DBI_TRACE(3, (DBILOGFP, "ib_fill_isqlda: XSQLDA len: %d\n",
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: XSQLDA len: %d\n",
                   imp_sth->in_sqlda->sqln));
 
     /* NULL indicator */
@@ -2127,8 +2097,8 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 #if 0
     if (ivar->sqldata)
     {
-        DBI_TRACE(3, (DBILOGFP, "ib_fill_isqlda: Freeing sqldata\n"));
-        DBI_TRACE(4, (DBILOGFP, "ib_fill_isqlda: Freeing sqldata, sqltype is %d\n", ivar->sqltype));
+        DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: Freeing sqldata\n"));
+        DBI_TRACE_imp_xxh(imp_sth, 4, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: Freeing sqldata, sqltype is %d\n", ivar->sqltype));
 
         safefree(ivar->sqldata);
         ivar->sqldata = (char *)NULL;
@@ -2182,10 +2152,10 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     {
         /**********************************************************************/
         case SQL_VARYING:
-            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_VARYING\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_VARYING\n"));
         {
             char buf[25]; /* long long can have max 20 chars. */
-            char *tmp;
+            char *tmp = NULL;
             if (ivar->sqldata == (char *) NULL)
             {
                 if ((ivar->sqldata = (char *)safemalloc(
@@ -2204,7 +2174,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 tmp = buf;
                 len = sprintf(tmp, "%ld", SvNV(value));
             }
-            else if (SvPOK(value)) {
+            else if (SvPOK(value) || (SvTYPE(value) == SVt_PVMG)) {
                 len = SvCUR(value);
                 tmp = SvPV_nolen(value);
             }
@@ -2237,7 +2207,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         }
         /**********************************************************************/
         case SQL_TEXT:
-            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_TEXT\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_TEXT\n"));
         {
             char buf[25]; /* long long can have max 20 chars. */
             char *tmp;
@@ -2249,7 +2219,6 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 {
                     do_error(sth, 2, "Cannot allocate buffer for TEXT input parameter \n");
                     retval = FALSE;
-                    safefree(tmp);
                     break;
                 }
             }
@@ -2261,7 +2230,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 tmp = buf;
                 len = sprintf(tmp, "%ld", SvNV(value));
             }
-            else if (SvPOK(value)) {
+            else if (SvPOK(value) || (SvTYPE(value) == SVt_PVMG)) {
                 len = SvCUR(value);
                 tmp = SvPV_nolen(value);
             }
@@ -2294,7 +2263,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         /**********************************************************************/
         case SQL_SHORT:
         case SQL_LONG:
-             DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_SHORT/SQL_LONG\n"));
+             DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_SHORT/SQL_LONG\n"));
 
         {
             char format[64];
@@ -2340,7 +2309,8 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 {
                     /* here we handle values such as .78 passed as string */
                     sprintf(format, ".%%%dld%%1ld", -ivar->sqlscale);
-                    sscanf(svalue, format, &q, &r);
+                    if (!sscanf(svalue, format, &q, &r) && DBIc_WARN(imp_sth))
+                        warn("problem parsing SQL_LONG type");
                 }
 
                 /* Round up if r is 5 or greater */
@@ -2369,7 +2339,8 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 if (!sscanf(svalue, format, &p, &r))
                 {
                     sprintf(format, ".%%1ld");
-                    sscanf(svalue, format, &r);
+                    if (!sscanf(svalue, format, &r) && DBIc_WARN(imp_sth))
+                        warn("problem parsing SQL_LONG type");
                 }
 
                 /* rounding */
@@ -2394,7 +2365,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         /**********************************************************************/
 #ifdef SQL_INT64
         case SQL_INT64:
-            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_INT64\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_INT64\n"));
 
         {
             char     *svalue;
@@ -2479,7 +2450,8 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 {
                     /* here we handle values such as .78 passed as string */
                     sprintf(format, S_INT64_DEC_FULL, -ivar->sqlscale);
-                    sscanf(svalue, format, &q, &r);
+                    if (!sscanf(svalue, format, &q, &r) && DBIc_WARN(imp_sth))
+                        warn("problem parsing SQL_INT64 type");
                 }
 
 #ifdef __BORLANDC__
@@ -2512,7 +2484,8 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 if (!sscanf(svalue, format, &p, &r))
                 {
                     sprintf(format, S_INT64_DEC_NOSCALE);
-                    sscanf(svalue, format, &r);
+                    if (!sscanf(svalue, format, &r) && DBIc_WARN(imp_sth))
+                        warn("problem parsing SQL_INT64 type");
                 }
 
                 /* rounding */
@@ -2531,7 +2504,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 
         /**********************************************************************/
         case SQL_FLOAT:
-            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_FLOAT\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_FLOAT\n"));
 
             if ((ivar->sqldata == (char *) NULL) &&
                 ((ivar->sqldata = (char *) safemalloc(sizeof(float))) == NULL))
@@ -2547,7 +2520,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 
         /**********************************************************************/
         case SQL_DOUBLE:
-            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_DOUBLE\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_DOUBLE\n"));
 
             if ((ivar->sqldata == (char *) NULL) &&
                 ((ivar->sqldata = (char *) safemalloc(sizeof(double))) == NULL))
@@ -2568,7 +2541,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
         case SQL_TYPE_TIME:
         case SQL_TYPE_DATE:
 #endif
-            if (SvPOK(value))
+            if (SvPOK(value) || SvTYPE(value) == SVt_PVMG)
             {
                 /*
                  * Coerce the date literal into a CHAR string, so as
@@ -2578,6 +2551,12 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 char *datestring = SvPV(value, len);
 
                 ivar->sqltype = SQL_TEXT | (ivar->sqltype & 1);
+
+                /* prevent overflow */
+                if (len > 100) {
+                    do_error(sth, 2, "DATE input parameter too long, but will try...\n");
+                    len = 100;
+                }
 
                 /* workaround for date problem (bug #429820) */
                 ivar->sqlsubtype = 0x77; /* (0x77 is a random value) */
@@ -2694,10 +2673,20 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 
         /**********************************************************************/
         case SQL_BLOB:
-            DBI_TRACE(1, (DBILOGFP, "ib_fill_isqlda: SQL_BLOB\n"));
+            DBI_TRACE_imp_xxh(imp_sth, 1, (DBIc_LOGPIO(imp_sth), "ib_fill_isqlda: SQL_BLOB\n"));
 
-            /* we have an extra function for this */
-            retval = ib_blob_write(sth, imp_sth, ivar, value);
+            /* SELECT's can't have a blob as in_sqlda. */
+            if ((imp_sth->type == isc_info_sql_stmt_select) ||
+                (imp_sth->type == isc_info_sql_stmt_select_for_upd))
+            {
+                do_error(sth, 2, "BLOB as an input param for SELECT is not allowed.\n");
+                retval = FALSE;
+                break;
+            }
+            else
+                /* we have an extra function for this */
+                retval = ib_blob_write(sth, imp_sth, ivar, value);
+
             break;
 
         /**********************************************************************/
@@ -2712,7 +2701,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     }
 
 
-    DBI_TRACE(3, (DBILOGFP, "exiting ib_fill_isqlda: %d\n", retval));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "exiting ib_fill_isqlda: %d\n", retval));
 
     return retval;
 }
@@ -2721,7 +2710,7 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
 int dbd_bind_ph(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
                 IV sql_type, SV *attribs, int is_inout, IV maxlen)
 {
-    DBI_TRACE(2, (DBILOGFP, "dbd_bind_ph\n"));
+    DBI_TRACE_imp_xxh(imp_sth, 2, (DBIc_LOGPIO(imp_sth), "dbd_bind_ph\n"));
 
     if (SvTYPE(value) > SVt_PVLV)
         croak("Can't bind a non-scalar value (%s)", neatsvpv(value,0));
@@ -2737,7 +2726,7 @@ int dbd_bind_ph(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
     if ((int)SvIV(param) > imp_sth->in_sqlda->sqld)
         return TRUE;
 
-    DBI_TRACE(3, (DBILOGFP, "Binding parameter: %d\n", (int)SvIV(param)));
+    DBI_TRACE_imp_xxh(imp_sth, 3, (DBIc_LOGPIO(imp_sth), "Binding parameter: %d\n", (int)SvIV(param)));
 
     return ib_fill_isqlda(sth, imp_sth, param, value, sql_type);
 }
@@ -2749,7 +2738,7 @@ int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh)
 
     if (imp_dbh->tr)
     {
-        DBI_TRACE(3, (DBILOGFP, "ib_start_transaction: trans handle already started.\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "ib_start_transaction: trans handle already started.\n"));
         return TRUE;
     }
 
@@ -2762,7 +2751,7 @@ int ib_start_transaction(SV *h, imp_dbh_t *imp_dbh)
     if (ib_error_check(h, status))
         return FALSE;
 
-    DBI_TRACE(3, (DBILOGFP, "ib_start_transaction: transaction started.\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "ib_start_transaction: transaction started.\n"));
 
     return TRUE;
 }
@@ -2772,13 +2761,13 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    DBI_TRACE(2, (DBILOGFP, "ib_commit_transaction\n"));
-    DBI_TRACE(4, (DBILOGFP, "ib_commit_transaction: DBIcf_AutoCommit = %d, imp_dbh->sth_ddl = %d\n",
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "ib_commit_transaction\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 4, (DBIc_LOGPIO(imp_dbh), "ib_commit_transaction: DBIcf_AutoCommit = %d, imp_dbh->sth_ddl = %d\n",
                   DBIc_has(imp_dbh, DBIcf_AutoCommit), imp_dbh->sth_ddl));
 
     if (!imp_dbh->tr)
     {
-        DBI_TRACE(3, (DBILOGFP, "ib_commit_transaction: transaction already NULL.\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "ib_commit_transaction: transaction already NULL.\n"));
         /* In case we switched to use different TPB before we actually use */
         /* This transaction handle                                         */
         imp_dbh->sth_ddl = 0;
@@ -2789,7 +2778,7 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
     /* do commit */
     if ((imp_dbh->sth_ddl == 0) && (imp_dbh->soft_commit))
     {
-        DBI_TRACE(2, (DBILOGFP, "try isc_commit_retaining\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "try isc_commit_retaining\n"));
 
         /* commit but don't close transaction */
         isc_commit_retaining(status, &(imp_dbh->tr));
@@ -2812,7 +2801,7 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
             imp_dbh->sth_ddl = 0;
         }
 
-        DBI_TRACE(2, (DBILOGFP, "try isc_commit_transaction\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "try isc_commit_transaction\n"));
 
 
         /* commit and close transaction (sets handle to NULL) */
@@ -2824,7 +2813,7 @@ int ib_commit_transaction(SV *h, imp_dbh_t *imp_dbh)
         imp_dbh->tr = 0L;
     }
 
-    DBI_TRACE(2, (DBILOGFP, "ib_commit_transaction succeed.\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "ib_commit_transaction succeed.\n"));
 
     return TRUE;
 }
@@ -2833,12 +2822,12 @@ int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
-    DBI_TRACE(2, (DBILOGFP, "ib_rollback_transaction\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "ib_rollback_transaction\n"));
 
 
     if (!imp_dbh->tr)
     {
-        DBI_TRACE(3, (DBILOGFP, "ib_rollback_transaction: transaction already NULL.\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 3, (DBIc_LOGPIO(imp_dbh), "ib_rollback_transaction: transaction already NULL.\n"));
 
         imp_dbh->sth_ddl = 0;
 
@@ -2849,7 +2838,7 @@ int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh)
 #ifdef IB_API_V6
     if ((imp_dbh->sth_ddl == 0) && (imp_dbh->soft_commit))
     {
-        DBI_TRACE(2, (DBILOGFP, "try isc_rollback_retaining\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "try isc_rollback_retaining\n"));
 
         /* rollback but don't close transaction */
         isc_rollback_retaining(status, &(imp_dbh->tr));
@@ -2873,7 +2862,7 @@ int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh)
             imp_dbh->sth_ddl = 0;
         }
 
-        DBI_TRACE(2, (DBILOGFP, "try isc_rollback_transaction\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "try isc_rollback_transaction\n"));
 
 
         /* rollback and close transaction (sets handle to NULL) */
@@ -2885,7 +2874,7 @@ int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh)
         imp_dbh->tr = 0L;
     }
 
-    DBI_TRACE(2, (DBILOGFP, "ib_rollback_transaction succeed\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "ib_rollback_transaction succeed\n"));
 
     return TRUE;
 }

@@ -1,9 +1,9 @@
-DBD::InterBase -- DBI driver for InterBase RDBMS server.
+DBD::InterBase -- DBI driver for Firebird and InterBase RDBMS server.
 
-   $Id: README,v 1.10 2002/08/12 16:04:26 danielritz Exp $
+   $Id: README,v 1.12 2005/09/12 03:21:41 edpratomo Exp $
 
-   Copyright (c) 1999-2001  Edwin Pratomo
-   Portions Copyright (c) 2001-2002  Daniel Ritz 
+   Copyright (c) 1999-2005  Edwin Pratomo
+   Portions Copyright (c) 2001-2005  Daniel Ritz 
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file.
@@ -14,8 +14,8 @@ DBD::InterBase -- DBI driver for InterBase RDBMS server.
 
 REQUIREMENTS:
   - Perl 5.004 installed
-  - Perl DBI (1.08 and higher)
-  - InterBase
+  - Perl DBI (1.41 and higher)
+  - Firebird or InterBase
   - A C compiler
     * UN*X
       GCC 2.95.2 (tested, older may or may not work) or other capable
@@ -39,7 +39,7 @@ REQUIREMENTS:
   - Build, test and install Perl 5 (at least 5.004).
     It is very important to TEST it and INSTALL it!
 
-  - Build, test and install the DBI module (at least DBI 1.08).
+  - Build, test and install the DBI module (at least DBI 1.41).
     It is very important to TEST it and INSTALL it!
 
   - Remember to *read* the DBI README file!
@@ -58,6 +58,7 @@ BUILDING:
 
   To Configure and build the DBD:
     perl Makefile.PL
+      (when asked to specify a test database, please specify a non-existing file)
     make
 
 TESTING

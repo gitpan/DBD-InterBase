@@ -1,8 +1,8 @@
 /*
-   $Id: dbdimp.h,v 1.48 2003/12/06 11:07:21 edpratomo Exp $
+   $Id: dbdimp.h,v 1.52 2005/09/12 02:50:22 edpratomo Exp $
 
-   Copyright (c) 1999-2002  Edwin Pratomo
-   Portions Copyright (c) 2001-2002  Daniel Ritz
+   Copyright (c) 1999-2005  Edwin Pratomo
+   Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -63,11 +63,18 @@ static const int DBI_SQL_BLOB       = SQL_BLOB;
 #undef  SQL_TYPE_DATE
 #undef  SQL_ARRAY
 #undef  SQL_BLOB
+#undef  SQL_BOOLEAN
 
 #include <ibase.h>
 #include <time.h>
 
 /* defines */
+
+#ifndef SQLDA_CURRENT_VERSION
+#  define SQLDA_OK_VERSION SQLDA_VERSION1
+#else
+#  define SQLDA_OK_VERSION SQLDA_CURRENT_VERSION
+#endif
 
 /* is IB v6 API present? */
 #if defined(_ISC_TIMESTAMP_) || defined(ISC_TIMESTAMP_DEFINED)
@@ -144,8 +151,14 @@ do {                             \
     if (DBIS->debug >= level)    \
         PerlIO_printf args ;     \
 } while (0)
+#  define DBI_TRACE_imp_xxh(imp_xxh, level, args) \
+do { \
+    if (DBIc_TRACE_LEVEL(imp_xxh) >= level) \
+        PerlIO_printf args;             \
+} while (0)
 #else
 #  define DBI_TRACE(level, args) do {} while (0)
+#  define DBI_TRACE_imp_xxh(imp_xxh, level, args) do {} while (0)
 #endif
 
 #define BLOB_SEGMENT        (256)
@@ -166,6 +179,8 @@ do {                             \
 
 #define MAX_EVENTS          15
 
+typedef enum { ACTIVE, INACTIVE } IB_EVENT_STATE;
+
 /****************/
 /* data types   */
 /****************/
@@ -179,10 +194,10 @@ typedef struct
     char ISC_FAR    *result_buffer;
     char ISC_FAR * ISC_FAR *names;      /* names of events of interest */
     unsigned short  num;                /* number of events of interest */
-    short           epb_length;         /* length of bufers */
-    char            reinit;             /* buffer reinit flag */
+    short           epb_length;         /* length of event parameter buffer */
     SV              *perl_cb;           /* perl callback for this event */
-    char            cb_called;          /* true if a callback has been called */
+    IB_EVENT_STATE  state;
+    char            exec_cb;
 } IB_EVENT;
 
 /* Define driver handle data structure */
@@ -235,8 +250,8 @@ struct imp_sth_st
     char            *timestampformat;
     char            *timeformat;
 #endif
-    imp_sth_t *prev_sth;                /* pointer to prev statement */
-    imp_sth_t *next_sth;                /* pointer to next statement */
+    imp_sth_t       *prev_sth;                /* pointer to prev statement */
+    imp_sth_t       *next_sth;                /* pointer to next statement */
 };
 
 
@@ -252,6 +267,7 @@ typedef struct dbd_vary
 #define dbd_init            ib_init
 #define dbd_discon_all      ib_discon_all
 #define dbd_db_login        ib_db_login
+#define dbd_db_login6       ib_db_login6
 #define dbd_db_do           ib_db_do
 #define dbd_db_commit       ib_db_commit
 #define dbd_db_rollback     ib_db_rollback
@@ -283,6 +299,7 @@ int ib_start_transaction   (SV *h, imp_dbh_t *imp_dbh);
 int ib_commit_transaction  (SV *h, imp_dbh_t *imp_dbh);
 int ib_rollback_transaction(SV *h, imp_dbh_t *imp_dbh);
 long ib_rows(SV *xxh, isc_stmt_handle *h_stmt, char count_type);
+void ib_cleanup_st_prepare (imp_sth_t *imp_sth);
 
 SV* dbd_db_quote(SV* dbh, SV* str, SV* type);
 

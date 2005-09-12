@@ -1,8 +1,7 @@
 InterBase.h
 Changes
-lib/Bundle/DBD/InterBase.pm
-lib/DBD/InterBase/FAQ.pm
 lib/DBD/InterBase/GetInfo.pm
+lib/DBD/InterBase/TypeInfo.pm
 InterBase.pm
 InterBase.xs
 MANIFEST
@@ -33,6 +32,8 @@ t/60leaks.t
 t/61settx.t
 t/70nestedoff.t
 t/70nestedon.t
+t/80event-ithreads.t
+t/81event-fork.t
 t/InterBase.dbtest
 t/InterBase.mtest
 t/README

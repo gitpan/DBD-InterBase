@@ -1,6 +1,65 @@
 Revision history for Perl extension DBD::InterBase.
 
-$Id: Changes,v 1.28 2004/02/25 04:38:03 edpratomo Exp $
+$Id: Changes,v 1.35 2005/09/12 03:25:30 edpratomo Exp $
+
+Sep 12, 2005
+* cleaned warnings when compiled with gcc-4.0
+
+Sep 11, 2005 - edpratomo
+* removed unused event state
+* renewed dbd_init(); DBIh_EVENT2 call and DBIS were removed.
+  perl -pi.old -e
+    's/DBI_TRACE\((\d),\s*?\(DBILOGFP, ("[^"]+".*)\)\);/DBI_TRACE_imp_xxh(imp_xyz, $1, (DBIc_LOGPIO(imp_xyz), $2));/' 
+     InterBase.xs dbdimp.c
+  followed by manual tweaking
+* triggers cleanup in t/8[01]event-*.t
+
+Sep 10, 2005 - edpratomo
+* Updates to documentation regarding bugs, faq, and event
+* fixed $how_many in t/81event-fork.t
+* GetInfo.pm was regenerated using easysoft's firebird odbc driver,
+  unixodbc, DBI::DBD::Metadata, and DBD::ODBC, of course
+* TypeInfo.pm was generated as well, and added to MANIFEST
+* t/40alltypes.t, t/40datetime.t, t/41numeric.t now use find_new_table()
+
+Sep 8, 2005 - edpratomo
+* FAQ was moved into main documentation, maintaining docs at separate
+  places is difficult
+* FAQ.pm and Bundle were removed from MANIFEST. Bundle is not necessary.
+
+Sep 4, 2005 - edpratomo
+* fixed segfault when destroying event handles in multithreaded app
+* increased DBI version in Makefile.PL
+* added t/80event-ithreads.t, t/81-event-fork.t, uses Test::More
+* updated documentation
+
+Aug 31, 2005 - edpratomo
+* cleaned warnings about unused variables, different signedness
+* make it compile with old gcc 2.96
+* increased required DBI version - 1.41
+
+Aug 30, 2005 - edpratomo
+* manually applied patch sf #1042790 by freeduke for dbdimp.c to support
+  InterBase 7. typecasting changes are skipped.
+* major changes to event API
+* manually applied patch sf #1068671 by dstreifert
+
+Aug 8, 2005 - edpratomo
+* fixed bug sf #1171702 (memory leak when doing TM type timestamp)
+
+Jan 14, 2005 - danielritz
+* better error handling for blobs
+* 30insertfetch.t, 40blobs.t with more tests
+* prevent a possible buffer overflow in date handling
+* don't accept blob bind param for SELECT statement
+* remove pointless 'ib_cursorname' attribute. DBD does it automatically
+
+Nov 26, 2004 - danielritz
+* add CLONE() method to support threads
+* update test scripts for newer DBI
+
+Mar 3, 2004 - edpratomo
+* make bind value with blessed scalar work again
 
 Feb 25, 2004 - edpratomo
 * Fixed memory write error in dbd_db_login6()
@@ -12,71 +71,81 @@ Dec 6, 2003 - edpratomo
 * Updated doc
 * $sth->execute() now returns correct row count values for non-select stmt
 
-Nov 19, 2003
-* Fixed bug #844954, by edpratomo
+Nov 19, 2003 - edpratomo
+* Fixed bug #844954
 
-Nov 16, 2003
-* Make it work with Firebird 1.5, by danielritz
+Nov 16, 2003 - danielritz
+* Make it work with Firebird 1.5
 
-May 20, 2003
+May 20, 2003 - edpratomo
 * Fixed problem in ib_init_event() in filling IB_EVENT->names, caused segfault during destruction.
 * Added skipping reason in t/60leaks.t
 
-July 25, 2002
-* cleanups, speedups, by danielritz
+July 25, 2002 - danielritz
+* cleanups, speedups
 
-July 18, 2002
+July 18, 2002 - edpratomo
 * fixes by Sergey Skvortsov:
   - fix INT64 for FreeBSD
   - fix for ib_role parsing
-* %lld as standard format for INT64, by danielritz
 
-July 8, 2002
-* numeric fixes for negative values like -0.9, by danielritz
+July 18, 2002 - danielritz
+* %lld as standard format for INT64
 
-July 1, 2002
-* trace message can be deactivated, by danielritz
+July 8, 2002 - danielritz
+* numeric fixes for negative values like -0.9
 
-June 2002
-* ib event support (mostly edwin, fixes by danielritz)
-* more cleanups, IB5 fixes, by danielritz
+July 1, 2002 - danielritz
+* trace message can be deactivated
 
-May 2002, by danielritz
+June ?, 2002 - danielritz
+* fixes for ib event 
+* more cleanups, IB5 fixes
+
+June ?, 2002 - edpratomo
+* initial support for ib event
+
+May ?, 2002 - danielritz
 * fix EXECUTE PROCEDURE w/o return values
 * compile fixes for IB5
 * rollback can do isc_rollback_retaining
 * cleanups
 
-April 22, 2002
-* fix EXECUTE PROCEDURE statments data fetching, by danielritz
+April 22, 2002 - danielritz
+* fix EXECUTE PROCEDURE statments data fetching
 
-April 5, 2002
+April 5, 2002 - edpratomo
 * Switching AutoCommit attribute now also affects active softcommit flags.
 
-April 4, 2002
+April 4, 2002 - edpratomo, danielritz
 * Added ib_softcommit attribute, isc_commit_retaining now needs to be enabled
-  explicitly by users. (Daniel and I).
+  explicitly by users. 
+
+April 4, 2002 - danielritz
+* Added set_tx_param() with no param which now resets TPB.
+
+April 4, 2002 - edpratomo
 * Updated t/40cursoron.t, t/70nestedon.t to use ib_softcommit
 * Makefile.PL code indented properly, now load dbd_dbi_arch_dir() only once, 
   now prompts with directory name, `make clean` cleans trace.txt
 * Updated documentation in InterBase.pm and FAQ.pm
-* Daniel added set_tx_param() with no param which now resets TPB.
-* Changed the semantic of -reserving in set_tx_param(), now uses hashref instead of arrayref.
+* Changed the semantic of -reserving in set_tx_param(), now uses hashref
+  instead of arrayref.
 * Fixed warnings when compiled with DBI >= 1.20
 * Ilya addressed bug #429820 and some bug in sth_ddl.
 
-February 14, 2002
-* fix DATE, TIME, TIMESTAP problem, by ilyaverlinsky
+February 14, 2002 - ilyaverlinsky
+* fix DATE, TIME, TIMESTAP problem
 
-February 8, 2002
-* fix sth_ddl not always being reset,  by ilyaverlinsky
+February 8, 2002 - ilyaverlinsky
+* fix sth_ddl not always being reset
 
-February 2, 2002
-* faster  blob write code, by danielritz
+February 2, 2002 - danielritz
+* faster  blob write code
 
-January 30, 2002
-* updated numeric handing code, by danielritz
-* fixed blob code, by danielritz
+January 30, 2002 - danielritz
+* updated numeric handing code
+* fixed blob code
 
 January 29, 2002
 * Fixed wrong value stored through bind param if numeric(*, 0)

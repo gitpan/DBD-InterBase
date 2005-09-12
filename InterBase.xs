@@ -1,8 +1,8 @@
 /*
-   $Id: InterBase.xs,v 1.43 2003/12/06 11:04:10 edpratomo Exp $
+   $Id: InterBase.xs,v 1.49 2005/09/12 02:50:22 edpratomo Exp $
 
-   Copyright (c) 1999-2003  Edwin Pratomo
-   Portions Copyright (c) 2001-2003  Daniel Ritz
+   Copyright (c) 1999-2005  Edwin Pratomo
+   Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
    License or the Artistic License, as specified in the Perl README file,
@@ -13,9 +13,33 @@
 
 #include "InterBase.h"
 
-/* callback function for events, called by InterBase */
-isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updated)
+DBISTATE_DECLARE;
+
+static int _cancel_callback(SV *dbh, IB_EVENT *ev)
 {
+    ISC_STATUS status[ISC_STATUS_LENGTH];
+    D_imp_dbh(dbh);
+
+    int ret = 0;
+    if (ev->exec_cb) 
+        croak("Can't be called from inside a callback");
+    if (ev->perl_cb) {
+        ev->state = INACTIVE;
+        SvREFCNT_dec(ev->perl_cb);
+        ev->perl_cb = (SV*)NULL;
+        isc_cancel_events(status, &(imp_dbh->db), &(ev->id));
+        if (ib_error_check(dbh, status))
+            ret = 0;
+        else
+            ret = 1;
+    } else 
+        croak("No callback found for this event handle. Have you called ib_register_callback?");
+    return ret;
+}
+
+static int _call_perlsub(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updated)
+{
+    int retval = 1;
 #if defined(USE_THREADS) || defined(USE_ITHREADS) || defined(MULTIPLICITY)
     /* save context, set context from dbh */
     void *context = PERL_GET_CONTEXT;
@@ -28,24 +52,38 @@ isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *u
     {
 #endif
         dSP;
+        int i, count;
+        SV **svp;
+        HV *posted_events = newHV();
+        unsigned long ecount[15];
         char ISC_FAR *result = ev->result_buffer;
 
-        ENTER;
-        SAVETMPS;
-
-        PUSHMARK(SP);
-        PUTBACK;
-
-        perl_call_sv(ev->perl_cb, G_VOID);
-
-        FREETMPS;
-        LEAVE;
-
-        /* Copy the updated buffer to the result buffer */
         while (length--)
             *result++ = *updated++;
-
-        ev->cb_called = 1;
+        isc_event_counts(ecount, ev->epb_length, ev->event_buffer,
+                         ev->result_buffer);
+        for (i = 0; i < ev->num; i++) 
+        {
+            if (ecount[i])
+            {
+                svp = hv_store(posted_events, *(ev->names + i), strlen(*(ev->names + i)),
+                               newSViv(ecount[i]), 0);
+                if (svp == NULL)
+                    croak("Bad: key '%s' not stored", *(ev->names + i));
+            }
+        }
+        ENTER;
+        SAVETMPS;
+        PUSHMARK(SP);
+        XPUSHs(sv_2mortal(newRV_noinc((SV*)posted_events)));
+        PUTBACK;
+        count = perl_call_sv(ev->perl_cb, G_SCALAR);
+        SPAGAIN;
+        if (count > 0) 
+            retval = POPi;
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
 #if defined(USE_THREADS) || defined(USE_ITHREADS) || defined(MULTIPLICITY)
     }
 
@@ -56,11 +94,38 @@ isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *u
     PERL_SET_CONTEXT(context);
     perl_free(cb_perl);
 #endif
+    return retval;
+}
 
+/* callback function for events, called by InterBase */
+static isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updated)
+{
+    ISC_STATUS status[ISC_STATUS_LENGTH];
+
+    switch (ev->state) {
+    case INACTIVE:
+        break;
+    case ACTIVE:
+        ev->exec_cb = 1;
+        if (_call_perlsub(ev, length, updated) == 0) {
+            ev->state = INACTIVE;
+            ev->exec_cb = 0;
+            break;
+        }
+        ev->exec_cb = 0;
+        isc_que_events(
+            status,
+            &(ev->dbh->db),
+            &(ev->id),
+            ev->epb_length,
+            ev->event_buffer,
+            (isc_callback)_async_callback,
+            ev
+        );
+    }
     return (0);
 }
 
-DBISTATE_DECLARE;
 
 MODULE = DBD::InterBase     PACKAGE = DBD::InterBase
 
@@ -82,13 +147,12 @@ _do(dbh, statement, attr=Nullsv)
     int        retval;
     char       *sbuf = SvPV(statement, slen);
 
-    DBI_TRACE(1, (DBILOGFP, "db::_do\n"
-                            "Executing : %s\n", sbuf));
+    DBI_TRACE_imp_xxh(imp_dbh, 1, (DBIc_LOGPIO(imp_dbh), "db::_do\n" "Executing : %s\n", sbuf));
 
     /* we need an open transaction */
     if (!imp_dbh->tr)
     {
-        DBI_TRACE(1, (DBILOGFP, "starting new transaction..\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 1, (DBIc_LOGPIO(imp_dbh), "starting new transaction..\n"));
 
         if (!ib_start_transaction(dbh, imp_dbh))
         {
@@ -97,7 +161,7 @@ _do(dbh, statement, attr=Nullsv)
             return;
         }
 
-        DBI_TRACE(1, (DBILOGFP, "new transaction started.\n"));
+        DBI_TRACE_imp_xxh(imp_dbh, 1, (DBIc_LOGPIO(imp_dbh), "new transaction started.\n"));
     }
 
     /* only execute_immediate statment if NOT in soft commit mode */
@@ -178,7 +242,7 @@ _do(dbh, statement, attr=Nullsv)
         XST_mIV(0, retval); /* typically 1, rowcount or -1  */
 }
 
-int
+void
 _ping(dbh)
     SV *    dbh
     CODE:
@@ -813,7 +877,7 @@ ib_init_event(dbh, ...)
 {
     unsigned short cnt = items - 1;
 
-    DBI_TRACE(2, (DBILOGFP, "Entering init_event(), %d items..\n", cnt));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "Entering init_event(), %d items..\n", cnt));
 
     if (cnt > 0)
     {
@@ -830,11 +894,11 @@ ib_init_event(dbh, ...)
         RETVAL->event_buffer  = NULL;
         RETVAL->result_buffer = NULL;
         RETVAL->id            = 0;
-        RETVAL->reinit        = 0;
         RETVAL->num           = cnt;
         RETVAL->perl_cb       = NULL;
-        RETVAL->cb_called     = 0;
-
+        RETVAL->state         = INACTIVE;
+        RETVAL->exec_cb       = 0;
+        
         RETVAL->names = (char **) safemalloc(sizeof(char*) * MAX_EVENTS);
         if (RETVAL->names == NULL)
             croak("Unable to allocate memory");
@@ -876,8 +940,17 @@ ib_init_event(dbh, ...)
     }
     else
         croak("Names of the events in interest are not specified");
-
-    DBI_TRACE(2, (DBILOGFP, "Leaving init_event()\n"));
+    {
+        ISC_STATUS status[ISC_STATUS_LENGTH];
+	unsigned long ecount[15];
+        isc_wait_for_event(status, &(imp_dbh->db), RETVAL->epb_length, RETVAL->event_buffer,
+                       RETVAL->result_buffer);
+        if (ib_error_check(dbh, status))
+            croak("error in isc_wait_for_event()");
+        isc_event_counts(ecount, RETVAL->epb_length, RETVAL->event_buffer,
+                       RETVAL->result_buffer);
+    }
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "Leaving init_event()\n"));
 }
     OUTPUT:
     RETVAL
@@ -893,11 +966,17 @@ ib_register_callback(dbh, ev, perl_cb)
     D_imp_dbh(dbh);
     CODE:
 {
-    DBI_TRACE(2, (DBILOGFP, "Entering register_callback()..\n"));
+    DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "Entering register_callback()..\n"));
 
     /* save the perl callback function */
-    ev->perl_cb = perl_cb;
-
+    if (ev->perl_cb == (SV*)NULL) 
+        ev->perl_cb = newSVsv(perl_cb);
+    else {
+        if (_cancel_callback(dbh, ev))
+            SvSetSV(ev->perl_cb, perl_cb);
+        else
+            XSRETURN_UNDEF;
+    }
     /* set up the events */
     isc_que_events(
         status,
@@ -907,60 +986,14 @@ ib_register_callback(dbh, ev, perl_cb)
         ev->event_buffer,
         (isc_callback)_async_callback,
         ev);
-
     if (ib_error_check(dbh, status))
-        RETVAL = 0;
+        XSRETURN_UNDEF;
     else
         RETVAL = 1;
-
-    DBI_TRACE(2, (DBILOGFP, "Leaving register_callback(): %d\n", RETVAL));
+    ev->state = ACTIVE;
 }
     OUTPUT:
     RETVAL
-
-
-HV*
-ib_reinit_event(dbh, ev)
-    SV *dbh;
-    IB_EVENT *ev
-    PREINIT:
-    int i;
-    SV  **svp;
-    ISC_STATUS status[ISC_STATUS_LENGTH];
-    CODE:
-{
-    DBI_TRACE(2, (DBILOGFP, "reinit_event() - reinit value: %d.\n",
-                  (int)ev->reinit));
-
-    RETVAL = newHV();
-    /* if (ev->reinit) { */
-    if (1)
-    {
-        isc_event_counts(status, ev->epb_length, ev->event_buffer,
-                         ev->result_buffer);
-        for (i = 0; i < ev->num; i++)
-        {
-            if (status[i])
-            {
-                DBI_TRACE(2, (DBILOGFP, "Event %s caught %ld times.\n",
-                              *(ev->names + i), status[i]));
-
-                svp = hv_store(RETVAL, *(ev->names + i), strlen(*(ev->names + i)),
-                               newSViv(status[i]), 0);
-                if (svp == NULL)
-                    croak("Bad: key '%s' not stored", *(ev->names + i));
-            }
-        }
-    }
-    else
-        ev->reinit = 1;
-
-    ev->cb_called = 0;
-}
-    OUTPUT:
-    RETVAL
-    CLEANUP:
-    SvREFCNT_dec(RETVAL);
 
 
 int
@@ -968,46 +1001,48 @@ ib_cancel_callback(dbh, ev)
     SV *dbh
     IB_EVENT *ev
     PREINIT:
-    ISC_STATUS status[ISC_STATUS_LENGTH];
-    D_imp_dbh(dbh);
     CODE:
-{
-    DBI_TRACE(2, (DBILOGFP, "Entering cancel_callback()..\n"));
-
-    if (ev->perl_cb)
-        isc_cancel_events(status, &(imp_dbh->db), &(ev->id));
-
-    if (ib_error_check(dbh, status))
-    {
-        do_error(dbh, 2, "cancel_callback() error");
-        RETVAL = 0;
-    }
-    else
-        RETVAL = 1;
-}
+    RETVAL = _cancel_callback(dbh, ev);
     OUTPUT:
     RETVAL
 
 
-int
+HV*
 ib_wait_event(dbh, ev)
     SV *dbh
     IB_EVENT *ev
     PREINIT:
+    int i;
+    SV **svp;
     ISC_STATUS status[ISC_STATUS_LENGTH];
     D_imp_dbh(dbh);
     CODE:
 {
     isc_wait_for_event(status, &(imp_dbh->db), ev->epb_length, ev->event_buffer,
                        ev->result_buffer);
-
     if (ib_error_check(dbh, status))
     {
-        do_error(dbh, 2, "wait_event() error");
-        RETVAL = 0;
+        do_error(dbh, 2, "ib_wait_event() error");
+        XSRETURN_UNDEF;
     }
     else
-        RETVAL = 1;
+    {
+	unsigned long ecount[15];
+        isc_event_counts(ecount, ev->epb_length, ev->event_buffer,
+                         ev->result_buffer);
+        RETVAL = newHV();
+        for (i = 0; i < ev->num; i++) 
+        {
+            if (ecount[i])
+            {
+                DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "Event %s caught %ld times.\n", *(ev->names + i), ecount[i]));
+                svp = hv_store(RETVAL, *(ev->names + i), strlen(*(ev->names + i)),
+                               newSViv(ecount[i]), 0);
+                if (svp == NULL)
+                    croak("Bad: key '%s' not stored", *(ev->names + i));
+            }
+        }
+    }
 }
     OUTPUT:
     RETVAL
@@ -1024,28 +1059,30 @@ DESTROY(evh)
     ISC_STATUS status[ISC_STATUS_LENGTH];
     CODE:
 {
-    DBI_TRACE(2, (DBILOGFP, "Entering DBD::InterBase::Event destructor..\n"));
-
+    DBI_TRACE_imp_xxh(evh->dbh, 2, (DBIc_LOGPIO(evh->dbh), "Entering DBD::InterBase::Event::DESTROY..\n"));
+#ifdef DBI_USE_THREADS
+	if (PERL_GET_CONTEXT != evh->dbh->context) {
+		DBI_TRACE_imp_xxh(evh->dbh, 2, (DBIc_LOGPIO(evh->dbh), 
+			"DBD::InterBase::Event::DESTROY ignored because owned by thread %p not current thread %p\n",
+			evh->dbh->context, (PerlInterpreter *)PERL_GET_CONTEXT)
+		);
+		XSRETURN(0);
+	}
+#endif
     for (i = 0; i < evh->num; i++)
         if (*(evh->names + i))
             safefree(*(evh->names + i));
     if (evh->names)
         safefree(evh->names);
-    if (evh->perl_cb)
+    if (evh->perl_cb) {
+        SvREFCNT_dec(evh->perl_cb);
         isc_cancel_events(status, &(evh->dbh->db), &(evh->id));
+    }
     if (evh->event_buffer)
         isc_free(evh->event_buffer);
     if (evh->result_buffer)
         isc_free(evh->result_buffer);
 }
-
-int
-callback_called(evh)
-    IB_EVENT *evh
-    CODE:
-    RETVAL = evh->cb_called;
-    OUTPUT:
-    RETVAL
 
 MODULE = DBD::InterBase     PACKAGE = DBD::InterBase::st
 

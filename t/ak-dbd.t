@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: ak-dbd.t,v 1.4 2001/04/19 14:56:06 edpratomo Exp $
+#   $Id: ak-dbd.t,v 1.5 2005/08/31 08:25:02 edpratomo Exp $
 #
 #   This is a skeleton test. For writing new tests, take this file
 #   and modify/extend it.
@@ -159,7 +159,7 @@ while (Testing()) {
     # This should fail with error message: We "forgot" execute.
     {
     my $pe = $sth->{'PrintError'};
-    $sth->{'PrintError'} = 0;
+    $sth->{'PrintWarn'} = 0;
     Test($state or !$sth->fetchrow)
         or ErrMsg("Missing error report from fetchrow.\n");
     $sth->{'PrintError'} = $pe;

@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40bindparam.t,v 1.6 2001/05/04 10:29:18 edpratomo Exp $
+#   $Id: 40bindparam.t,v 1.7 2005/08/09 08:34:17 edpratomo Exp $
 #
 #   This is a skeleton test. For writing new tests, take this file
 #   and modify/extend it.
@@ -78,7 +78,7 @@ $test_password, {ChopBlanks => 1}))
     #
     Test($state or ($def = TableDefinition($table,
                        ["id",   "INTEGER",  4, 0],
-                       ["name", "CHAR",    64, $COL_NULLABLE]),
+                       ["name", "CHAR",    64, $COL_NULLABLE, 'CHARACTER SET ISO8859_1']),
             $dbh->do($def)))
        or DbiError($dbh->err, $dbh->errstr);
 

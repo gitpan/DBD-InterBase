@@ -1,8 +1,8 @@
 
-#   $Id: Makefile.PL,v 1.29 2003/12/06 11:11:54 edpratomo Exp $
+#   $Id: Makefile.PL,v 1.33 2005/09/05 01:49:27 edpratomo Exp $
 #
-#   Copyright (c) 1999-2003 Edwin Pratomo
-#   Portions Copyright (c) 2001-2003 Daniel Ritz
+#   Copyright (c) 1999-2005 Edwin Pratomo
+#   Portions Copyright (c) 2001-2005 Daniel Ritz
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -24,7 +24,8 @@ use vars qw($Registry);
 # For those not using Dynamic loading this means building a
 # new static perl in the DBI directory by saying 'make perl'
 # and then using _that_ perl to make this one.
-use DBI 1.08;
+use DBI 1.41 ();
+use Test::More 0.4;
 use DBI::DBD;   # DBD creation tools
 
 my $ib_dir_prefix;
@@ -177,7 +178,7 @@ sub make_test_conf
             $host && $host !~ /localhost/)
         {
             print <<"EOM";
-$path doesn't exist. 
+$path does not exist.
 Trying to create the test database..
 Please enter a username with CREATE DATABASE permission.
 EOM
@@ -225,7 +226,7 @@ EOM
 
     # save test config to file
     open F, ">$test_conf" or die "Can't write $test_conf: $!";
-    print F 'dbi:InterBase:' . ($host ? "host=$host;" : '') . "db=$db;ib_dialect=3\n$user\n$pass\n";
+    print F 'dbi:InterBase:' . ($host ? "host=$host;" : '') . "db=$db;ib_dialect=3;ib_charset=ISO8859_1\n$user\n$pass\n";
     close F;
 }
 
@@ -425,7 +426,21 @@ LDDLFLAGS = /LIBPATH:\"$vc_lib\" $cur_lddlflags
 
         my $ib_lib = dir_choice("InterBase lib directory", 
                             [$ib_lib_dir . "SDK\\lib", $ib_lib_dir . "lib"],
-                            [qw(gds32.lib)]);
+                            [qw(gds32.lib fbclient.lib fbclient_ms.lib)]);
+
+        my $lib;
+        if (-f "$ib_lib/fbclient.lib")
+            { $lib = "$ib_lib/fbclient.lib"; }
+        elsif (-f "$ib_lib/fbclient_ms.lib")
+        {
+            # the borland compiler want omf format libs
+            system("\"$BCC_PATH\\bin\\coff2omf\"",
+                   "$ib_lib/fbclient_ms.lib",
+                   "$ib_lib/fbclient.lib");
+            $lib = "$ib_lib/fbclient.lib";
+        }
+        else
+            { $lib = "$ib_lib/gds32.lib"; }
 
         my $bcc_inc = $BCC_PATH . "include";
         $MakeParams{'CCFLAGS'}    = '-a4 -w- -DWIN32 -DNO_STRICT -DNDEBUG -D_CONSOLE -DHAVE_DES_FCRYPT -DPERL_IMPLICIT_CONTEXT -DPERL_IMPLICIT_SYS -DPERL_MSVCRT_READFIX';
@@ -435,7 +450,7 @@ LDDLFLAGS = /LIBPATH:\"$vc_lib\" $cur_lddlflags
         eval "
     sub MY::const_loadlibs {
   '
-LDLOADLIBS = \$(LIBC) import32.lib gds32.lib cw32.lib
+LDLOADLIBS = \$(LIBC) import32.lib $lib cw32.lib
 LDDLFLAGS = -L\"$ib_lib\" -L\"$BCC_PATH\\lib\"
   '
   }
@@ -447,11 +462,8 @@ elsif ($os eq 'solaris')
 {
     $MakeParams{'LIBS'} = '-lgdsmt -lm -lc';
 }
-elsif ($os eq 'linux')
+elsif (($os eq 'linux') || ($os eq 'freebsd'))
 {
-    # This is for both:
-    # o Free IB 4.0 for Red Hat Linux 4.2
-    # o Commercial IB 5.1.1 for Red Hat Linux 5.1
     my $ib_lib = dir_choice("InterBase/Firebird lib directory",
     [qw(/usr/interbase/lib /opt/interbase/lib /usr/lib /usr/local/lib)],
     [qw(libgds.a libgds.so libfbclient.so libfbembed.so)]);
@@ -475,7 +487,9 @@ elsif ($os eq 'linux')
     else
          { $lib = 'gds'; }
 
-    $MakeParams{'LIBS'} = "-L$ib_lib -l$lib -ldl ";
+    my $ldl = ($os eq 'linux') ? '-ldl' : '';
+
+    $MakeParams{'LIBS'} = "-L$ib_lib -l$lib $ldl ";
 
     # o Commercial IB 5.1.1 for Red Hat Linux 6.x
     #   requires a compatibilty library to resolve
@@ -486,13 +500,6 @@ elsif ($os eq 'linux')
   {
      $MakeParams{'LIBS'} .= ' -lNoVersion-2.1.2'
   }
-}
-elsif ($os eq 'freebsd')
-{
-    my $ib_lib = dir_choice("InterBase lib directory",
-        [qw(/usr/interbase/lib /usr/lib)],
-        [qw(libgds.a libgds.so)]);
-    $MakeParams{'LIBS'} = "-L$ib_lib -lgds";
 }
 elsif ($os eq 'hpux')
 {

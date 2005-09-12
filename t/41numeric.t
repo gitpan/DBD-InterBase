@@ -1,10 +1,19 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 41numeric.t,v 1.1 2002/01/29 11:18:54 edpratomo Exp $
+#   $Id: 41numeric.t,v 1.3 2005/09/10 16:55:31 edpratomo Exp $
 #
 #   This is a test for INT64 type.
 #
 
+sub find_new_table {
+    my $dbh = shift;
+    my $try_name = 'TESTAA';
+    my %tables = map { uc($_) => 1 } $dbh->tables;
+    while (exists $tables{$try_name}) {
+        ++$try_name;
+    }
+    $try_name;
+}
 
 #
 #   Make -w happy
@@ -78,19 +87,22 @@ while (Testing()) {
     #   Create a new table
     #
 
-    my $table = 'builtin';
-    my $def =<<"DEF";
+    my ($def, $table, $stmt);
+    $state or do {
+        $table = find_new_table($dbh);
+        $def =<<"DEF";
 CREATE TABLE $table (
     NUMERIC_AS_INTEGER NUMERIC(9,3),
     NUMERIC_THREE_DIGITS  NUMERIC(18,3),
     NUMERIC_NO_DIGITS NUMERIC(10,0)
 )
 DEF
-
+    };
     Test($state or ($dbh->do($def)))
        or DbiError($dbh->err, $dbh->errstr);
 
-    my $stmt =<<"END_OF_QUERY";
+    $state or do {
+        $stmt =<<"END_OF_QUERY";
 INSERT INTO $table
     (
     NUMERIC_AS_INTEGER,
@@ -99,6 +111,7 @@ INSERT INTO $table
     )
     VALUES (?, ?, ?)
 END_OF_QUERY
+    };
 
     Test($state or $cursor = $dbh->prepare($stmt))
        or DbiError($dbh->err, $dbh->errstr);
@@ -170,7 +183,7 @@ END_OF_QUERY
     or DbiError($cursor->err, $cursor->errstr);
 
     #  NUM_OF_FIELDS should be zero (Non-Select)
-    Test($state or ($cursor->{'NUM_OF_FIELDS'} == 0))
+    Test($state or (!$cursor->{'NUM_OF_FIELDS'}))
     or !$verbose or printf("NUM_OF_FIELDS is %s, not zero.\n",
                    $cursor->{'NUM_OF_FIELDS'});
     Test($state or (undef $cursor) or 1);

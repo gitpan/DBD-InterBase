@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40cursoron.t,v 1.4 2002/04/05 03:12:51 edpratomo Exp $
+#   $Id: 40cursoron.t,v 1.5 2004/12/04 17:17:11 danielritz Exp $
 #
 #   This is a test for CursorName attribute with AutoCommit On.
 #
@@ -133,7 +133,7 @@ while (Testing()) {
 
 
     #  NUM_OF_FIELDS should be zero (Non-Select)
-    Test($state or ($cursor->{'NUM_OF_FIELDS'} == 0))
+    Test($state or (!$cursor->{'NUM_OF_FIELDS'}))
     or !$verbose or printf("NUM_OF_FIELDS is %s, not zero.\n",
                    $cursor->{'NUM_OF_FIELDS'});
 
