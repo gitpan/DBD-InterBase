@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.52 2005/09/12 02:50:22 edpratomo Exp $
+   $Id: dbdimp.h,v 1.55 2006/10/16 06:54:51 edpratomo Exp $
 
    Copyright (c) 1999-2005  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
@@ -69,6 +69,11 @@ static const int DBI_SQL_BLOB       = SQL_BLOB;
 #include <time.h>
 
 /* defines */
+
+/* Firebird API 20 */
+#if !defined(FB_API_VER) || FB_API_VER < 20
+typedef void (*ISC_EVENT_CALLBACK)();
+#endif
 
 #ifndef SQLDA_CURRENT_VERSION
 #  define SQLDA_OK_VERSION SQLDA_VERSION1
@@ -190,8 +195,13 @@ typedef struct
 {
     imp_dbh_t       *dbh;               /* pointer to parent dbh */
     ISC_LONG        id;                 /* event id assigned by IB */
+#if defined(INCLUDE_TYPES_PUB_H)
+    ISC_UCHAR       *event_buffer;
+    ISC_UCHAR       *result_buffer;
+#else
     char ISC_FAR    *event_buffer;
     char ISC_FAR    *result_buffer;
+#endif
     char ISC_FAR * ISC_FAR *names;      /* names of events of interest */
     unsigned short  num;                /* number of events of interest */
     short           epb_length;         /* length of event parameter buffer */

@@ -1,7 +1,7 @@
 /*
-   $Id: dbdimp.c,v 1.114 2005/09/12 03:18:47 edpratomo Exp $
+   $Id: dbdimp.c,v 1.117 2006/10/16 06:54:51 edpratomo Exp $
 
-   Copyright (c) 1999-2005  Edwin Pratomo
+   Copyright (c) 1999-2006  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
@@ -116,6 +116,7 @@ void do_error(SV *h, int rc, char *what)
             what, rc, SvPV(errstr,na));
 }
 
+#define CALC_AVAILABLE(buff) sizeof(buff) - strlen(buff) - 1
 
 /* higher level error handling, check and decode status */
 int ib_error_check(SV *h, ISC_STATUS *status)
@@ -123,29 +124,45 @@ int ib_error_check(SV *h, ISC_STATUS *status)
     if (status[0] == 1 && status[1] > 0)
     {
         long sqlcode;
-        char msg[1024], *pmsg;
-
+        unsigned int avail;
+#if !defined(FB_API_VER) || FB_API_VER < 20
         ISC_STATUS *pvector = status;
+#else
+        const ISC_STATUS *pvector = status;
+#endif
+#if defined (INCLUDE_TYPES_PUB_H) 
+        ISC_SCHAR msg[1024], *pmsg;
+#else
+        char msg[1024], *pmsg;
+#endif
+        memset(msg, 0, sizeof(msg));
         pmsg = msg;
-
-        /* isc_interprete(msg, &pvector); */
-
-        /* isc_sql_interprete doesn't work as expected */
-        /* isc_sql_interprete(sqlcode, msg, 1024); */
 
         if ((sqlcode = isc_sqlcode(status)) != 0)
         {
-            isc_sql_interprete((short) sqlcode, pmsg, 1024);
-            while (*pmsg) pmsg++;
-            *pmsg++ = '\n';
-            *pmsg++ = '-';
+            isc_sql_interprete((short) sqlcode, pmsg, sizeof(msg));
+            avail = CALC_AVAILABLE(msg);
+            if (avail > 1) {
+                while (*pmsg) pmsg++;
+                *pmsg++ = '\n';
+                *pmsg++ = '-';
+                avail = CALC_AVAILABLE(msg);
+            }
         }
 
+#if !defined(FB_API_VER) || FB_API_VER < 20
         while (isc_interprete(pmsg, &pvector))
+#else
+        while (avail > 0 && fb_interpret(pmsg, avail, &pvector))
+#endif
         {
-            while (*pmsg) pmsg++;
-            *pmsg++ = '\n';
-            *pmsg++ = '-';
+            avail = CALC_AVAILABLE(msg);
+            if (avail > 1) {
+                while (*pmsg) pmsg++;
+                *pmsg++ = '\n';
+                *pmsg++ = '-';
+                avail = CALC_AVAILABLE(msg);
+            }
         }
         *--pmsg = '\0';
 
@@ -1245,12 +1262,12 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     {
                         double numeric;
 
-                        numeric = ((double) (*(long *) var->sqldata)) /
+                        numeric = ((double) (*(ISC_LONG *) var->sqldata)) /
                                    pow(10.0, (double) -var->sqlscale);
                         sv_setnv(sv, numeric);
                     }
                     else
-                        sv_setiv(sv, *(long *) (var->sqldata));
+                        sv_setiv(sv, *(ISC_LONG *) (var->sqldata));
                     break;
 #ifdef SQL_INT64
                 case SQL_INT64:
@@ -1519,7 +1536,7 @@ AV *dbd_st_fetch(SV *sth, imp_sth_t *imp_sth)
                     /* Open the Blob according to the Blob id. */
                     isc_open_blob2(status, &(imp_dbh->db), &(imp_dbh->tr),
                                    &blob_handle, (ISC_QUAD *) var->sqldata,
-#ifdef INCLUDE_FB_TYPES_H
+#if defined(INCLUDE_FB_TYPES_H) || defined(INCLUDE_TYPES_PUB_H)
                                    (ISC_USHORT) 0,
                                    (ISC_UCHAR) NULL);
 #else                                   

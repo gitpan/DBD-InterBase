@@ -1,5 +1,5 @@
 
-#   $Id: Makefile.PL,v 1.33 2005/09/05 01:49:27 edpratomo Exp $
+#   $Id: Makefile.PL,v 1.34 2006/10/13 19:20:34 edpratomo Exp $
 #
 #   Copyright (c) 1999-2005 Edwin Pratomo
 #   Portions Copyright (c) 2001-2005 Daniel Ritz
@@ -465,7 +465,7 @@ elsif ($os eq 'solaris')
 elsif (($os eq 'linux') || ($os eq 'freebsd'))
 {
     my $ib_lib = dir_choice("InterBase/Firebird lib directory",
-    [qw(/usr/interbase/lib /opt/interbase/lib /usr/lib /usr/local/lib)],
+    [qw(/usr/firebird/lib /opt/firebird/lib /usr/interbase/lib /opt/interbase/lib /usr/lib /usr/local/lib)],
     [qw(libgds.a libgds.so libfbclient.so libfbembed.so)]);
     my $lib;
 

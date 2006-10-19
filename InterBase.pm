@@ -1,6 +1,6 @@
-#   $Id: InterBase.pm,v 1.55 2005/09/12 03:22:57 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.57 2006/10/16 03:51:46 edpratomo Exp $
 #
-#   Copyright (c) 1999-2005 Edwin Pratomo
+#   Copyright (c) 1999-2006 Edwin Pratomo
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.44';
+$VERSION = '0.45';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -311,7 +311,8 @@ respective meanings:
     database    path to the database                required
     dbname      path to the database
     db          path to the database
-    host        hostname (not IP address)           optional
+    hostname    hostname / IP address               optional
+    host        hostname / IP address
     port        port number                         optional
     ib_dialect  the SQL dialect to be used          optional
     ib_role     the role of the user                optional
@@ -324,6 +325,11 @@ Here is an example of DSN to connect to a remote Windows host:
 
  $dsn = "dbi:InterBase:db=C:/temp/test.gdb;host=rae.cumi.org;ib_dialect=3";
 
+Database file alias introduced in Firebird 1.5 can be used too. In the following 
+example, "billing" is defined in aliases.conf:
+
+ $dsn = 'dbi:InterBase:hostname=192.168.88.5;db=billing;ib_dialect=3';
+ 
 Firebird as of version 1.0 listens on port specified within the services
 file. To connect to port other than the default 3050, add the port number at
 the end of host name, separated by a slash. Example:
@@ -1279,9 +1285,13 @@ C<set_tx_param()> is obsoleted by C<ib_set_tx_param()>.
 
 =item InterBase 6.0/6.01 for Windows, FreeBSD, SPARC Solaris
 
-=item Firebird 1.0 Final SS for Windows, Linux, SPARC Solaris
+=item FirebirdSS 1.0 Final for Windows, Linux, SPARC Solaris
 
-=item Firebird 1.5 RC7, 1.5, 1.5.x for Linux, Win32
+=item FirebirdSS 1.5.2.4731 for Windows, Linux
+
+=item FirebirdSS 2.0 RC4 for Linux. The AMD64 (64-bit) version is also tested. Should also 
+work with Intel EM64T. 
+
 
 =back
 
@@ -1325,7 +1335,7 @@ DBI(3).
 
 =head1 COPYRIGHT
 
-The DBD::InterBase module is Copyright (c) 1999-2005 Edwin Pratomo.
+The DBD::InterBase module is Copyright (c) 1999-2006 Edwin Pratomo.
 Portions Copyright (c) 2001-2005 Daniel Ritz.
 
 The DBD::InterBase module is free software. 
@@ -1337,8 +1347,9 @@ for commercial distribution without the prior approval of the author.
 =head1 ACKNOWLEDGEMENTS
 
 An attempt to enumerate all who have contributed patches (may misses some):
-Igor Klingen, Sergey Skvortsov, Ilya Verlinsky, Pavel Zheltouhov, Peter
-Wilkinson, Mark D. Anderson, Michael Samanov, Michael Arnett, Flemming
-Frandsen, Mike Shoyher, Christiaan Lademann. 
+Michael Moehle, Igor Klingen, Sergey Skvortsov, Ilya Verlinsky, Pavel
+Zheltouhov, Peter Wilkinson, Mark D. Anderson, Michael Samanov, Michael
+Arnett, Flemming Frandsen, Mike Shoyher, Christiaan Lademann.  
+
 
 =cut

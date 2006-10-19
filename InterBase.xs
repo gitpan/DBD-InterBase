@@ -1,7 +1,7 @@
 /*
-   $Id: InterBase.xs,v 1.49 2005/09/12 02:50:22 edpratomo Exp $
+   $Id: InterBase.xs,v 1.53 2006/10/16 07:16:09 edpratomo Exp $
 
-   Copyright (c) 1999-2005  Edwin Pratomo
+   Copyright (c) 1999-2006  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
@@ -37,7 +37,13 @@ static int _cancel_callback(SV *dbh, IB_EVENT *ev)
     return ret;
 }
 
-static int _call_perlsub(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updated)
+static int _call_perlsub(IB_EVENT ISC_FAR *ev, short length, 
+#if defined(INCLUDE_TYPES_PUB_H)
+const ISC_UCHAR *updated
+#else
+char ISC_FAR *updated
+#endif
+)
 {
     int retval = 1;
 #if defined(USE_THREADS) || defined(USE_ITHREADS) || defined(MULTIPLICITY)
@@ -55,8 +61,12 @@ static int _call_perlsub(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updat
         int i, count;
         SV **svp;
         HV *posted_events = newHV();
-        unsigned long ecount[15];
+        ISC_ULONG ecount[15];
+#if defined(INCLUDE_TYPES_PUB_H)
+        ISC_UCHAR *result = ev->result_buffer;
+#else
         char ISC_FAR *result = ev->result_buffer;
+#endif
 
         while (length--)
             *result++ = *updated++;
@@ -98,7 +108,14 @@ static int _call_perlsub(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updat
 }
 
 /* callback function for events, called by InterBase */
-static isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updated)
+/* static isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC_FAR *updated) */
+static ISC_EVENT_CALLBACK _async_callback(IB_EVENT ISC_FAR *ev, 
+#if defined(INCLUDE_TYPES_PUB_H)
+ISC_USHORT length, const ISC_UCHAR *updated
+#else
+short length, char ISC_FAR *updated
+#endif
+)
 {
     ISC_STATUS status[ISC_STATUS_LENGTH];
 
@@ -119,7 +136,7 @@ static isc_callback _async_callback(IB_EVENT ISC_FAR *ev, short length, char ISC
             &(ev->id),
             ev->epb_length,
             ev->event_buffer,
-            (isc_callback)_async_callback,
+            (ISC_EVENT_CALLBACK)_async_callback,
             ev
         );
     }
@@ -688,7 +705,7 @@ ib_database_info(dbh, ...)
             DB_RESBUF_CASEHDR(db_id)
             {
                 HV *reshv = newHV();
-                long slen;
+                ISC_LONG slen;
 
                 hv_store(reshv, "connection", 10,
                          (isc_vax_integer(p++, 1) == 2)?
@@ -751,7 +768,7 @@ ib_database_info(dbh, ...)
 
             DB_RESBUF_CASEHDR(version)
             {
-                long slen;
+                ISC_LONG slen;
                 slen = isc_vax_integer(++p, 1);
                 hv_store(RETVAL, keyname, strlen(keyname),
                          newSVpvn(++p, slen), 0);
@@ -795,7 +812,7 @@ ib_database_info(dbh, ...)
             {
                 AV *avres;
                 SV **svp;
-                long slen;
+                ISC_LONG slen;
 
                 /* array already existing? no -> create */
                 if (!hv_exists(RETVAL, "user_names", 10))
@@ -942,7 +959,7 @@ ib_init_event(dbh, ...)
         croak("Names of the events in interest are not specified");
     {
         ISC_STATUS status[ISC_STATUS_LENGTH];
-	unsigned long ecount[15];
+		ISC_ULONG ecount[15];
         isc_wait_for_event(status, &(imp_dbh->db), RETVAL->epb_length, RETVAL->event_buffer,
                        RETVAL->result_buffer);
         if (ib_error_check(dbh, status))
@@ -984,7 +1001,7 @@ ib_register_callback(dbh, ev, perl_cb)
         &(ev->id),
         ev->epb_length,
         ev->event_buffer,
-        (isc_callback)_async_callback,
+        (ISC_EVENT_CALLBACK)_async_callback,
         ev);
     if (ib_error_check(dbh, status))
         XSRETURN_UNDEF;
@@ -1027,7 +1044,7 @@ ib_wait_event(dbh, ev)
     }
     else
     {
-	unsigned long ecount[15];
+	ISC_ULONG ecount[15];
         isc_event_counts(ecount, ev->epb_length, ev->event_buffer,
                          ev->result_buffer);
         RETVAL = newHV();
