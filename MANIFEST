@@ -30,10 +30,12 @@ t/50chopblanks.t
 t/50commit.t
 t/60leaks.t
 t/61settx.t
+t/62timeout.t
 t/70nestedoff.t
 t/70nestedon.t
 t/80event-ithreads.t
 t/81event-fork.t
+t/90dbinfo.t
 t/InterBase.dbtest
 t/InterBase.mtest
 t/README

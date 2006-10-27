@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.c,v 1.117 2006/10/16 06:54:51 edpratomo Exp $
+   $Id: dbdimp.c,v 1.118 2006/10/23 20:49:10 edpratomo Exp $
 
    Copyright (c) 1999-2006  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
@@ -124,7 +124,7 @@ int ib_error_check(SV *h, ISC_STATUS *status)
     if (status[0] == 1 && status[1] > 0)
     {
         long sqlcode;
-        unsigned int avail;
+        unsigned int avail = 0;
 #if !defined(FB_API_VER) || FB_API_VER < 20
         ISC_STATUS *pvector = status;
 #else
@@ -277,7 +277,7 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
 
     STRLEN len; /* for SvPV */
 
-    char  dbkey_scope   = 1;
+    char  dbkey_scope   = 0;
     short dpb_length    = 0;
     unsigned int buflen = 0;   /* buffer size is dynamic */
     imp_dbh->db         = 0L;
@@ -379,8 +379,15 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     else
         ib_role = NULL;
 
+    if ((svp = hv_fetch(hv, "ib_dbkey_scope", 14, FALSE)))
+    {
+        dbkey_scope = (char)SvIV(*svp);
+        if (dbkey_scope)
+            buflen += 5;
+    }
+
     /* add length of other parameters to needed buflen */
-    buflen += 1 + 5; /* dbpversion + sqlkeyscope */
+    buflen += 1; /* dbpversion */
 
     DBI_TRACE_imp_xxh(imp_dbh, 2, (DBIc_LOGPIO(imp_dbh), "dbd_db_login6\n"));
 
@@ -420,8 +427,11 @@ int dbd_db_login6(SV *dbh, imp_dbh_t *imp_dbh, char *dbname, char *uid,
     DPB_FILL_INTEGER(dpb, ib_dialect);
 #endif
 
-    DPB_FILL_BYTE(dpb, isc_dpb_dbkey_scope);
-    DPB_FILL_INTEGER(dpb, dbkey_scope);
+    if (dbkey_scope)
+    {
+        DPB_FILL_BYTE(dpb, isc_dpb_dbkey_scope);
+        DPB_FILL_INTEGER(dpb, dbkey_scope);
+    }
 
     if (ib_charset)
     {
@@ -2185,11 +2195,11 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
             }
             if (SvIOK(value)) {
                 tmp = buf;
-                len = sprintf(tmp, "%d", SvIV(value));
+                len = sprintf(tmp, "%d", (int)SvIV(value));
             }
             else if (SvNOK(value)) {
                 tmp = buf;
-                len = sprintf(tmp, "%ld", SvNV(value));
+                len = sprintf(tmp, "%f", SvNV(value));
             }
             else if (SvPOK(value) || (SvTYPE(value) == SVt_PVMG)) {
                 len = SvCUR(value);
@@ -2241,11 +2251,11 @@ static int ib_fill_isqlda(SV *sth, imp_sth_t *imp_sth, SV *param, SV *value,
             }
             if (SvIOK(value)) {
                 tmp = buf;
-                len = sprintf(tmp, "%d", SvIV(value));
+                len = sprintf(tmp, "%d", (int)SvIV(value));
             }
             else if (SvNOK(value)) {
                 tmp = buf;
-                len = sprintf(tmp, "%ld", SvNV(value));
+                len = sprintf(tmp, "%f", SvNV(value));
             }
             else if (SvPOK(value) || (SvTYPE(value) == SVt_PVMG)) {
                 len = SvCUR(value);

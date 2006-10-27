@@ -1,4 +1,4 @@
-#   $Id: InterBase.pm,v 1.57 2006/10/16 03:51:46 edpratomo Exp $
+#   $Id: InterBase.pm,v 1.60 2006/10/25 16:13:18 edpratomo Exp $
 #
 #   Copyright (c) 1999-2006 Edwin Pratomo
 #
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.45';
+$VERSION = '0.46';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -106,8 +106,8 @@ sub connect
 {
     my($drh, $dsn, $dbuser, $dbpasswd, $attr) = @_;
 
-    $dbuser   ||= "SYSDBA";
-    $dbpasswd ||= "masterkey";
+    $dbuser   ||= $ENV{ISC_USER};       #"SYSDBA";
+    $dbpasswd ||= $ENV{ISC_PASSWORD};   #"masterkey";
 
     my ($this, $private_attr_hash);
 
@@ -118,7 +118,7 @@ sub connect
     };
 
     DBD::InterBase->_OdbcParse($dsn, $private_attr_hash,
-                               ['database', 'host', 'port', 'ib_role', 
+                               ['database', 'host', 'port', 'ib_role', 'ib_dbkey_scope',
                                 'ib_charset', 'ib_dialect', 'ib_cache', 'ib_lc_time']);
 
     # second attr args will be retrieved using DBIc_IMP_DATA
@@ -306,18 +306,19 @@ parameters separated by B<semicolons>. New line may be added after the
 semicolon. The following is the list of valid parameters and their
 respective meanings:
 
-    parameter   meaning                             optional?
-    ---------------------------------------------------------
-    database    path to the database                required
-    dbname      path to the database
-    db          path to the database
-    hostname    hostname / IP address               optional
-    host        hostname / IP address
-    port        port number                         optional
-    ib_dialect  the SQL dialect to be used          optional
-    ib_role     the role of the user                optional
-    ib_charset  character set to be used            optional
-    ib_cache    number of database cache buffers    optional
+    parameter       meaning                                 optional?
+    -----------------------------------------------------------------
+    database        path to the database                    required
+    dbname          path to the database
+    db              path to the database
+    hostname        hostname / IP address                   optional
+    host            hostname / IP address
+    port            port number                             optional
+    ib_dialect      the SQL dialect to be used              optional
+    ib_role         the role of the user                    optional
+    ib_charset      character set to be used                optional
+    ib_cache        number of database cache buffers        optional
+    ib_dbkey_scope  change default duration of RDB$DB_KEY   optional
 
 B<database> could be used interchangebly with B<dbname> and B<db>. 
 To connect to a remote host, use the B<host> parameter. 
@@ -802,8 +803,8 @@ C<ib_set_tx_param()> database handle method is available.
 Upon a successful C<connect()>, these default parameter values will be used
 for every SQL operation:
 
-    Access mode:        read/write
-    Isolation level:    concurrency
+    Access mode:        read_write
+    Isolation level:    snapshot
     Lock resolution:    wait
 
 Any of the above value can be changed using C<ib_set_tx_param()>.
@@ -820,11 +821,21 @@ Any of the above value can be changed using C<ib_set_tx_param()>.
  );
 
 Valid value for C<-access_mode> is C<read_write>, or C<read_only>. 
-Valid value for C<-lock_resolution> is C<wait>, or C<no_wait>.
+
+Valid value for C<-lock_resolution> is C<wait>, or C<no_wait>. 
+In Firebird 2.0, a timeout value for wait is introduced. This can be 
+specified using hash ref as lock_resolution value:
+
+ $dbh->func(
+    -lock_resolution => { wait => 5 }, # wait for 5 seconds
+    'ib_set_tx_param'
+ );
+
 C<-isolation_level> may be: C<read_committed>, C<snapshot>,
-C<snapshot_table_stability>. If C<read_committed> is to be used with
-C<record_version> or C<no_record_version>, then they should be inside an
-anonymous array:
+C<snapshot_table_stability>. 
+
+If C<read_committed> is to be used with C<record_version> or
+C<no_record_version>, then they should be inside an anonymous array:
 
  $dbh->func( 
     -isolation_level => ['read_committed', 'record_version'],
@@ -1310,13 +1321,18 @@ This module is originally based on the work of Bill Karwin's IBPerl.
 
 =head1 BUGS/LIMITATIONS
 
-This module doesn't work with MSWin32 ActivePerl iThreads, and its emulated fork. Tested
-with MSWin32 ActivePerl build 809 (Perl 5.8.3). The whole process will block in unpredictable
-manner. 
+This module doesn't work with MSWin32 ActivePerl iThreads, and its emulated
+fork. Tested with MSWin32 ActivePerl build 809 (Perl 5.8.3). The whole
+process will block in unpredictable manner.
 
-Under Linux, this module has been tested with several different iThreads enabled Perl releases: 
-perl-5.8.0-88 from RedHat 9, perl-5.8.5-9 from Fedora Core 3, perl-5.8.6-15 from Fedora Core 4, and Perl 5.8.7. 
+Under Linux, this module has been tested with several different iThreads
+enabled Perl releases: perl-5.8.0-88 from RedHat 9, perl-5.8.5-9 from Fedora
+Core 3, perl-5.8.6-15 from Fedora Core 4, and Perl 5.8.[78]. 
+
 No problem occurred so far.. until you try to share a DBI handle ;-)
+
+But if you plan to use thread, you'd better use the latest stable version of
+Perl, 5.8.8 has fairly stable iThreads.
 
 Limitations:
 
@@ -1325,7 +1341,11 @@ Limitations:
 =item * Arrays are not (yet) supported
 
 =item * Read/Write BLOB fields block by block not (yet) supported. The
-maximum size of a BLOB read/write is hardcoded to about 1MB.
+maximum size of a BLOB read/write is hardcoded to about 1 MB.
+
+=item * isc_transaction_info() API is not supported. 
+
+=item * service manager API is not supported.
 
 =back
 

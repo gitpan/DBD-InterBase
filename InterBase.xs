@@ -1,5 +1,5 @@
 /*
-   $Id: InterBase.xs,v 1.53 2006/10/16 07:16:09 edpratomo Exp $
+   $Id: InterBase.xs,v 1.55 2006/10/25 16:13:18 edpratomo Exp $
 
    Copyright (c) 1999-2006  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
@@ -292,7 +292,8 @@ ib_set_tx_param(dbh, ...)
     CODE:
 {
     D_imp_dbh(dbh);
-
+    PERL_UNUSED_VAR(ix); /* -Wall */
+    
     /* if no params or first parameter = 0 or undef -> reset TPB to NULL */
     if (items < 3)
     {
@@ -321,7 +322,7 @@ ib_set_tx_param(dbh, ...)
             {
                 hv = (HV *)SvRV(sv_value);
                 hv_iterinit(hv);
-                while (he = hv_iternext(hv))
+                while ((he = hv_iternext(hv)))
                 {
                     /* retrieve the size of table name(s) */
                     HePV(he, len);
@@ -451,17 +452,47 @@ ib_set_tx_param(dbh, ...)
                 continue;
             }
 
-            tx_val = SvPV_nolen(sv_value);
-            if (strEQ(tx_val, "wait"))
-                *tpb++ = isc_tpb_wait;
-            else if (strEQ(tx_val, "no_wait"))
-                *tpb++ = isc_tpb_nowait;
-            else
-            {
-                safefree(tmp_tpb);
-                croak("Unknown transaction parameter %s", tx_val);
+            if (SvROK(sv_value) && SvTYPE(SvRV(sv_value)) == SVt_PVHV) {
+#if defined(FB_API_VER) && FB_API_VER >= 20
+                hv = (HV *)SvRV(sv_value);
+                if (hv_exists(hv, "wait", 4)) {
+                    *tpb++ = isc_tpb_wait;
+                    sv = *hv_fetch(hv, "wait", 4, FALSE);
+                    if (SvIOK(sv)) {
+                        IV lock_timeout = SvIV(sv);
+                        if (lock_timeout < 0) {
+                            do_error(dbh, 2, "Wait timeout value must be positive integer");
+                            XSRETURN_UNDEF;
+                        } else if (lock_timeout > 0) {
+                            *tpb++ = isc_tpb_lock_timeout;
+                            *tpb++ = sizeof(ISC_LONG);      /* length = 4 bytes */
+                            *(ISC_LONG*)tpb = lock_timeout; /* infinite timeout */
+                            tpb += sizeof(ISC_LONG);
+                        }
+                    } else {
+                        do_error(dbh, 2, "Wait timeout value must be positive integer");
+                        XSRETURN_UNDEF;
+                    }
+                } else {
+                    do_error(dbh, 2, "The only valid key is 'wait'");
+                    XSRETURN_UNDEF;
+                }
+#else
+                do_error(dbh, 2, "Hashref unsupported. Must be compiled with Firebird 2.0 client library");
+                XSRETURN_UNDEF;
+#endif
+            } else {
+                tx_val = SvPV_nolen(sv_value);
+                if (strEQ(tx_val, "wait"))
+                    *tpb++ = isc_tpb_wait;
+                else if (strEQ(tx_val, "no_wait"))
+                    *tpb++ = isc_tpb_nowait;
+                else
+                {
+                    safefree(tmp_tpb);
+                    croak("Unknown transaction parameter %s", tx_val);
+                }
             }
-
             ls_set = 1; /* flag */
         }
         /**********************************************************************/
@@ -473,7 +504,7 @@ ib_set_tx_param(dbh, ...)
                 HV *table_opts;
                 hv = (HV *)SvRV(sv_value);
                 hv_iterinit(hv);
-                while (he = hv_iternext(hv))
+                while ((he = hv_iternext(hv)))
                 {
                     /* check val type */
                     if (SvROK(HeVAL(he)) && SvTYPE(SvRV(HeVAL(he))) == SVt_PVHV)
@@ -647,7 +678,11 @@ ib_database_info(dbh, ...)
         DB_INFOBUF(marks,   4);
         DB_INFOBUF(reads,   4);
         DB_INFOBUF(writes,  4);
-
+#if defined(FB_API_VER) && FB_API_VER >= 20
+        /* FB 2.0 */
+        DB_INFOBUF(active_tran_count, 4);
+        DB_INFOBUF(creation_date,     sizeof(ISC_TIMESTAMP)); /* 2 x 4 bytes */
+#endif
         /* database operation counts */
         /* XXX - not implemented (complicated: returns a descriptor for _each_
            table...how to fetch / store this??) but do we really need these? */
@@ -668,7 +703,7 @@ ib_database_info(dbh, ...)
     if (ib_error_check(dbh, status))
     {
         safefree(res_buf);
-        croak("isc_database_info failed!");
+        XSRETURN_UNDEF; // croak("isc_database_info failed!");
     }
 
     /* create a hash if function passed */
@@ -676,7 +711,9 @@ ib_database_info(dbh, ...)
     if (!RETVAL)
     {
         safefree(res_buf);
-        croak("unable to allocate hash return value");
+        // croak("unable to allocate hash return value");
+        do_error(dbh, 2, "unable to allocate hash return value");
+        XSRETURN_UNDEF;
     }
 
     /* fill the hash with key/value pairs */
@@ -861,6 +898,28 @@ ib_database_info(dbh, ...)
                 hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
+#if defined(FB_API_VER) && FB_API_VER >= 20
+            /* FB 2.0 */
+            DB_RESBUF_CASEHDR(active_tran_count)
+                hv_store(RETVAL, keyname, strlen(keyname),
+                        newSViv(isc_vax_integer(p, (short) length)), 0);
+                break;
+
+            DB_RESBUF_CASEHDR(creation_date)
+            {
+                struct tm times;
+                ISC_TIMESTAMP cdatetime;
+                char tbuf[100];
+                memset(tbuf, 0, sizeof(tbuf));
+                cdatetime.timestamp_date = isc_vax_integer(p, sizeof(ISC_DATE));
+                cdatetime.timestamp_time = isc_vax_integer(p + sizeof(ISC_DATE), sizeof(ISC_TIME));
+                isc_decode_timestamp(&cdatetime, &times);
+                strftime(tbuf, sizeof(tbuf), "%c", &times);
+                hv_store(RETVAL, keyname, strlen(keyname),
+                         newSVpvn(tbuf, strlen(tbuf)), 0);
+                break;
+            }
+#endif
 
             default:
                 break;
@@ -963,7 +1022,7 @@ ib_init_event(dbh, ...)
         isc_wait_for_event(status, &(imp_dbh->db), RETVAL->epb_length, RETVAL->event_buffer,
                        RETVAL->result_buffer);
         if (ib_error_check(dbh, status))
-            croak("error in isc_wait_for_event()");
+            XSRETURN_UNDEF; //croak("error in isc_wait_for_event()");
         isc_event_counts(ecount, RETVAL->epb_length, RETVAL->event_buffer,
                        RETVAL->result_buffer);
     }

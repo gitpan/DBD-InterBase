@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 80event-ithreads.t,v 1.3 2005/09/12 02:44:29 edpratomo Exp $
+#   $Id: 80event-ithreads.t,v 1.4 2006/10/23 20:49:10 edpratomo Exp $
 #
 
 use strict;
@@ -127,7 +127,7 @@ SKIP: {
     # test ib_wait_event
     %::CNT = ();
     $t = threads->create($worker, $table, $::test_dsn, $::test_user, $::test_password);
-    ok($t);
+    ok($t, "create thread");
     for (1..6) {
         my $posted_events = $dbh->func($evh, 'ib_wait_event');
         while (my ($k, $v) = each %$posted_events) {
