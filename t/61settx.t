@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 61settx.t,v 1.5 2002/04/05 03:12:51 edpratomo Exp $
+#   $Id: 61settx.t 229 2002-04-05 03:12:51Z edpratomo $
 #
 #   This is a test for set_tx_param() private method.
 #

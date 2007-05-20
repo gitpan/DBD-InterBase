@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 80event-ithreads.t,v 1.4 2006/10/23 20:49:10 edpratomo Exp $
+#   $Id: 80event-ithreads.t 372 2006-10-25 18:17:44Z edpratomo $
 #
 
 use strict;
@@ -99,6 +99,7 @@ my $worker = sub {
 SKIP: {
     skip "this $^O perl $] is not configured to support iThreads", $how_many if (!$Config{useithreads} || $] < 5.008);
     skip "known problems under MSWin32 ActivePerl's iThreads", $how_many if $Config{osname} eq 'MSWin32';
+    skip "Perl version is older than 5.8.8", $how_many if $^V and $^V lt v5.8.8;
     eval { require threads };
     skip "unable to use threads;", $how_many if $@;
 

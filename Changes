@@ -1,6 +1,16 @@
 Revision history for Perl extension DBD::InterBase.
 
-$Id: Changes,v 1.39 2006/10/25 16:13:18 edpratomo Exp $
+$Id: Changes 381 2007-05-20 15:25:13Z edpratomo $
+
+May 20, 2007 - edpratomo
+* fixed retval from ib_set_tx
+* removed debug output from ib_tx_info
+
+Oct 25, 2006 - edpratomo
+* added ib_tx_info()
+* added t/91txinfo.t
+* added skip check for t/80event-ithreads.t if Perl version older than 5.8.8
+* updated MANIFEST
 
 Oct 24, 2006 - edpratomo
 * fixed some croaks in InterBase.xs

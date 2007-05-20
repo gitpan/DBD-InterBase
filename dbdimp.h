@@ -1,5 +1,5 @@
 /*
-   $Id: dbdimp.h,v 1.55 2006/10/16 06:54:51 edpratomo Exp $
+   $Id: dbdimp.h 365 2006-10-16 06:54:51Z edpratomo $
 
    Copyright (c) 1999-2005  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz

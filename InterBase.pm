@@ -1,4 +1,4 @@
-#   $Id: InterBase.pm,v 1.60 2006/10/25 16:13:18 edpratomo Exp $
+#   $Id: InterBase.pm 372 2006-10-25 18:17:44Z edpratomo $
 #
 #   Copyright (c) 1999-2006 Edwin Pratomo
 #
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.46';
+$VERSION = '0.47';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -1004,6 +1004,12 @@ will be automatically cancelled before it is cleaned up.
 
 =over
 
+=item C<ib_tx_info>
+
+ $hash_ref = $dbh->func('ib_tx_info');
+
+Retrieve information about current active transaction.
+
 =item C<ib_database_info>
 
  $hash_ref = $dbh->func(@info, 'ib_database_info');
@@ -1342,8 +1348,6 @@ Limitations:
 
 =item * Read/Write BLOB fields block by block not (yet) supported. The
 maximum size of a BLOB read/write is hardcoded to about 1 MB.
-
-=item * isc_transaction_info() API is not supported. 
 
 =item * service manager API is not supported.
 

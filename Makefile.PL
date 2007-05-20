@@ -1,5 +1,5 @@
 
-#   $Id: Makefile.PL,v 1.35 2006/10/23 20:49:10 edpratomo Exp $
+#   $Id: Makefile.PL 369 2006-10-23 20:49:10Z edpratomo $
 #
 #   Copyright (c) 1999-2005 Edwin Pratomo
 #   Portions Copyright (c) 2001-2005 Daniel Ritz

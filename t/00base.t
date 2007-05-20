@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-#   $Id: 00base.t,v 1.2 2001/04/19 14:56:06 edpratomo Exp $
+#   $Id: 00base.t 112 2001-04-19 14:56:06Z edpratomo $
 #
 #   This is the base test, tries to install the drivers. Should be
 #   executed as the very first test.

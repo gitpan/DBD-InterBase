@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Id: 90dbinfo.t,v 1.2 2006/10/25 16:13:18 edpratomo Exp $
+# $Id: 90dbinfo.t 370 2006-10-25 16:13:18Z edpratomo $
 # test for ib_database_info()
 
 use strict;

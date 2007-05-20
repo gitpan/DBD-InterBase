@@ -1,7 +1,7 @@
 /*
-   $Id: InterBase.xs,v 1.55 2006/10/25 16:13:18 edpratomo Exp $
+   $Id: InterBase.xs 381 2007-05-20 15:25:13Z edpratomo $
 
-   Copyright (c) 1999-2006  Edwin Pratomo
+   Copyright (c) 1999-2007  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
@@ -272,7 +272,222 @@ _ping(dbh)
         XST_mIV(0, ret);
 }
 
-void
+#define TX_INFOBUF(name, len) \
+if (strEQ(item, #name)) { \
+    *p++ = (char) isc_info_tra_##name; \
+    res_len += len + 3; \
+    item_buf_len++; \
+    continue; \
+}
+
+#define TX_RESBUF_CASE(name) \
+case isc_info_tra_##name:\
+{\
+    keyname = #name;\
+    PerlIO_printf(PerlIO_stderr(), "Got %s\n", keyname);\
+    p++;\
+    length = isc_vax_integer (p, 2);\
+    p += 2;\
+    hv_store(RETVAL, keyname, strlen(keyname), \
+             newSViv(isc_vax_integer(p, (short) length)), 0);\
+    p += length;\
+    break;\
+}
+
+HV*
+ib_tx_info(dbh)
+    SV* dbh
+    PREINIT:
+    char* p;
+    char* result = NULL;
+    short result_length = 0;
+    ISC_STATUS status[ISC_STATUS_LENGTH];
+    CODE:
+{
+    D_imp_dbh(dbh);
+    char request[] = {
+        isc_info_tra_id, 
+#if defined(FB_API_VER) && FB_API_VER >= 20
+        /* FB 2.0: */
+        isc_info_tra_oldest_interesting,
+        isc_info_tra_oldest_active,
+        isc_info_tra_oldest_snapshot,
+        isc_info_tra_lock_timeout,
+        isc_info_tra_isolation,
+        isc_info_tra_access,
+#endif
+        isc_info_end
+    };
+
+    RETVAL = newHV();
+    if (!RETVAL) {
+        if (result) {
+            safefree(result);
+        }
+        do_error(dbh, 2, "unable to allocate hash return value");
+        XSRETURN_UNDEF;
+    }
+
+    if (!imp_dbh->tr) {
+        do_error(dbh, 2, "No active transaction");
+        XSRETURN_UNDEF;
+    } 
+    
+    /* calc required result buffer size */
+    for (p = request; *p != isc_info_end; p++) {
+        result_length++; /* identifier (1 byte)*/
+        switch (*p) {
+#if defined(FB_API_VER) && FB_API_VER >= 20
+            case isc_info_tra_isolation:
+                /* result: 
+                length (2 bytes) + first content (1 byte) +
+                length (2 bytes) + second content (2 bytes max)
+                */
+                result_length += 7;
+                break;
+            case isc_info_tra_access:
+                /* result:
+                length (2 bytes) + content (1 byte)
+                */
+                result_length += 3;
+                break;
+#endif
+            default:
+                result_length += 2; /* length (2 bytes) */
+                result_length += 4; /* pessimistic */
+        }
+    }
+
+    result_length += 1; /* add 1 byte for isc_info_end */
+    /* try insufficient result_length:
+    result_length = 40;
+    */
+    
+  try_alloc_result_buffer:
+    result = (char*)safemalloc(result_length * sizeof(char));
+    if (result == NULL) {
+        do_error(dbh, 2, "Unable to allocate memory");
+        XSRETURN_UNDEF;
+    }
+    memset(result, 0, result_length);
+    //PerlIO_printf(PerlIO_stderr(), "result_length: %d\n", result_length);
+
+    /* call */
+    isc_transaction_info(status, &(imp_dbh->tr), 
+                         sizeof(request), request, 
+                         result_length, result);
+
+    if (ib_error_check(dbh, status)) {
+        XSRETURN_UNDEF;
+    } else {
+        /* detect truncation */
+        for (p = result + result_length - 1; p > result; p--) {
+            if (*p != 0) {
+                break;
+            }
+        }
+        if (p > result) {
+            //PerlIO_printf(PerlIO_stderr(), "First non-null byte found at: %d\n", 
+            //    (p - result));
+            if (*p == isc_info_truncated) {
+                //PerlIO_printf(PerlIO_stderr(), "Truncation detected.\n");
+
+                /* increase result_length, retry allocation */
+                result_length += 10;
+                safefree(result);
+                result = NULL;
+                goto try_alloc_result_buffer;
+            }
+        }
+
+        /* parse result */
+        for (p = result; p < result + result_length; ) {
+            char *keyname;
+            short length;
+            if (*p == isc_info_end) {
+                //PerlIO_printf(PerlIO_stderr(), "isc_info_end encountered at byte: %d\n", (p - result));
+                break;
+            }
+            switch (*p) {
+                TX_RESBUF_CASE(id)
+#if defined(FB_API_VER) && FB_API_VER >= 20
+                TX_RESBUF_CASE(oldest_interesting)
+                TX_RESBUF_CASE(oldest_active)
+                TX_RESBUF_CASE(oldest_snapshot)
+                TX_RESBUF_CASE(lock_timeout)
+                case isc_info_tra_isolation:
+                {
+                    keyname = "isolation";
+                    HV* reshv;
+
+                    //PerlIO_printf(PerlIO_stderr(), "Got 'isolation' at byte: %d\n", (p - result));
+                    ++p;
+                    short length = isc_vax_integer(p, 2);
+                    p += 2;
+                    //PerlIO_printf(PerlIO_stderr(), "Content length: %d\n", length);
+                    
+                    if (*p == isc_info_tra_consistency) {
+                        hv_store(RETVAL, keyname, strlen(keyname), newSVpv("consistency", 0), 0);
+                    } else if (*p == isc_info_tra_concurrency) {
+                        hv_store(RETVAL, keyname, strlen(keyname), newSVpv("snapshot (concurrency)", 0), 0);
+                    } else if (*p == isc_info_tra_read_committed) {
+                        warn("got 'read_committed'");
+                        reshv = newHV();
+                        if (!reshv) {
+                            if (result) {
+                                safefree(result);
+                            }
+                            do_error(dbh, 2, "unable to allocate hash for read_committed rec/no_rec version");
+                            XSRETURN_UNDEF;
+                        }
+                        if (*(p + 1) == isc_info_tra_no_rec_version) {
+                            hv_store(reshv, "read_committed", 14, newSVpv("no_rec_version", 0), 0);
+                        } else if (*(p + 1) == isc_info_tra_rec_version) {
+                            hv_store(reshv, "read_committed", 14, newSVpv("rec_version", 0), 0);
+                        } else {
+                            warn("unrecognized byte");
+                            continue;
+                        }
+                        hv_store(RETVAL, keyname, strlen(keyname),
+                                 newRV_noinc((SV*) reshv), 0);
+
+                    } else {
+                        PerlIO_printf(PerlIO_stderr(), "+2: got unrecognized byte: %d\n", *((char*)p));
+                    }
+                    p += length;
+                    break;
+                }
+                case isc_info_tra_access: {
+                    keyname = "access";
+                    //PerlIO_printf(PerlIO_stderr(), "Got 'access' at byte: %d\n", (p - result));
+                    p++;
+                    short length = isc_vax_integer(p, 2);
+                    p += 2;
+                    if (*p == isc_info_tra_readonly) {
+                        hv_store(RETVAL, keyname, strlen(keyname), newSVpvn("readonly", 8), 0);
+                    } else if (*p == isc_info_tra_readwrite) {
+                        hv_store(RETVAL, keyname, strlen(keyname), newSVpvn("readwrite", 9), 0);
+                    }
+                    p += length;
+                    break;
+                }
+#endif
+                default:
+                    /* PerlIO_printf(PerlIO_stderr(), "now at byte: %d\n", (p - result)); */
+                    p++;
+            }
+        }
+    }
+}
+    OUTPUT: 
+    RETVAL
+    CLEANUP:
+    SvREFCNT_dec(RETVAL);
+
+#undef TX_INFOBUF
+#undef TX_RESBUF_CASE
+
+int
 ib_set_tx_param(dbh, ...)
     SV *dbh
     ALIAS:
@@ -589,7 +804,11 @@ ib_set_tx_param(dbh, ...)
         imp_dbh->sth_ddl++;
         ib_commit_transaction(dbh, imp_dbh);
     }
+    RETVAL = 1;
 }
+    OUTPUT:
+    RETVAL
+
 #*******************************************************************************
 
 # only for use within database_info!

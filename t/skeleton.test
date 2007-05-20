@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: skeleton.test,v 1.1.1.1 2000/07/31 09:14:03 edpratomo Exp $
+#   $Id: skeleton.test 2 2000-07-31 09:13:29Z edpratomo $
 #
 #   This is a skeleton test. For writing new tests, take this file
 #   and modify/extend it.

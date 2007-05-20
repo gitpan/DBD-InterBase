@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 81event-fork.t,v 1.3 2005/09/12 02:44:29 edpratomo Exp $
+#   $Id: 81event-fork.t 356 2005-09-12 02:44:29Z edpratomo $
 #
 
 use strict;

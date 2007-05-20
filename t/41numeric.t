@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 41numeric.t,v 1.3 2005/09/10 16:55:31 edpratomo Exp $
+#   $Id: 41numeric.t 349 2005-09-10 16:55:31Z edpratomo $
 #
 #   This is a test for INT64 type.
 #

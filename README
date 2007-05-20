@@ -1,6 +1,6 @@
 DBD::InterBase -- DBI driver for Firebird and InterBase RDBMS server.
 
-   $Id: README,v 1.12 2005/09/12 03:21:41 edpratomo Exp $
+   $Id: README 360 2005-09-12 03:25:30Z edpratomo $
 
    Copyright (c) 1999-2005  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz 

@@ -1,5 +1,5 @@
 /*
-   $Id: InterBase.h,v 1.3 2001/12/20 18:01:23 danielritz Exp $
+   $Id: InterBase.h 183 2001-12-20 18:01:23Z danielritz $
 
    Copyright (c) 1999,2000  Edwin Pratomo
 

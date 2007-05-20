@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 70nestedoff.t,v 1.2 2002/04/05 03:12:51 edpratomo Exp $
+#   $Id: 70nestedoff.t 229 2002-04-05 03:12:51Z edpratomo $
 #
 #   This is a test for nested statement handles.
 #

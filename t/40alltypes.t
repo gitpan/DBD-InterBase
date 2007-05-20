@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl
 #
-#   $Id: 40alltypes.t,v 1.9 2005/09/10 16:55:30 edpratomo Exp $
+#   $Id: 40alltypes.t 349 2005-09-10 16:55:31Z edpratomo $
 #
 #   This is a test for all data types handling.
 #
