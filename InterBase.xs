@@ -1,7 +1,7 @@
 /*
-   $Id: InterBase.xs 381 2007-05-20 15:25:13Z edpratomo $
+   $Id: InterBase.xs 394 2008-01-08 05:29:19Z edpratomo $
 
-   Copyright (c) 1999-2007  Edwin Pratomo
+   Copyright (c) 1999-2008  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public
@@ -181,6 +181,8 @@ _do(dbh, statement, attr=Nullsv)
         DBI_TRACE_imp_xxh(imp_dbh, 1, (DBIc_LOGPIO(imp_dbh), "new transaction started.\n"));
     }
 
+    /* we need to count the DDL statement whether in soft / hard commit */
+#if 0
     /* only execute_immediate statment if NOT in soft commit mode */
     if (!(imp_dbh->soft_commit))
     {
@@ -192,12 +194,9 @@ _do(dbh, statement, attr=Nullsv)
         else
             retval = -1 ;
     }
-    /* for AutoCommit: prepare/getinfo/exec statment (count DDL statements)
-     * an easier and also working way would be to do that from perl with
-     *   $sth = $dbh->prepare(...); $sth->execute();
-     * but this way is much faster (no bind params, etc.)
-     */
     else
+#endif
+    /* count DDL statements is necessary for ib_commit_transaction to work properly */
     {
         isc_stmt_handle stmt = 0L;        /* temp statment handle */
         static char     stmt_info[] = { isc_info_sql_stmt_type };
@@ -211,13 +210,11 @@ _do(dbh, statement, attr=Nullsv)
             if (isc_dsql_alloc_statement2(status, &(imp_dbh->db), &stmt))
                 break;
 
-
             /* prepare statement */
             isc_dsql_prepare(status, &(imp_dbh->tr), &stmt, 0, sbuf,
                              imp_dbh->sqldialect, NULL);
             if (ib_error_check(dbh, status))
                 break;
-
 
             /* get statement type */
             if (!isc_dsql_sql_info(status, &stmt, sizeof(stmt_info), stmt_info,
@@ -230,7 +227,6 @@ _do(dbh, statement, attr=Nullsv)
             }
             else
                 break;
-
 
             /* exec the statement */
             isc_dsql_execute(status, &(imp_dbh->tr), &stmt, imp_dbh->sqldialect, NULL);
@@ -284,11 +280,11 @@ if (strEQ(item, #name)) { \
 case isc_info_tra_##name:\
 {\
     keyname = #name;\
-    PerlIO_printf(PerlIO_stderr(), "Got %s\n", keyname);\
+    /* PerlIO_printf(PerlIO_stderr(), "Got %s\n", keyname); */\
     p++;\
     length = isc_vax_integer (p, 2);\
     p += 2;\
-    hv_store(RETVAL, keyname, strlen(keyname), \
+    (void)hv_store(RETVAL, keyname, strlen(keyname), \
              newSViv(isc_vax_integer(p, (short) length)), 0);\
     p += length;\
     break;\
@@ -370,7 +366,7 @@ ib_tx_info(dbh)
         XSRETURN_UNDEF;
     }
     memset(result, 0, result_length);
-    //PerlIO_printf(PerlIO_stderr(), "result_length: %d\n", result_length);
+    /* PerlIO_printf(PerlIO_stderr(), "result_length: %d\n", result_length); */
 
     /* call */
     isc_transaction_info(status, &(imp_dbh->tr), 
@@ -387,10 +383,9 @@ ib_tx_info(dbh)
             }
         }
         if (p > result) {
-            //PerlIO_printf(PerlIO_stderr(), "First non-null byte found at: %d\n", 
-            //    (p - result));
+            /* PerlIO_printf(PerlIO_stderr(), "First non-null byte found at: %d\n", (p - result)); */
             if (*p == isc_info_truncated) {
-                //PerlIO_printf(PerlIO_stderr(), "Truncation detected.\n");
+                /* PerlIO_printf(PerlIO_stderr(), "Truncation detected.\n"); */
 
                 /* increase result_length, retry allocation */
                 result_length += 10;
@@ -405,7 +400,7 @@ ib_tx_info(dbh)
             char *keyname;
             short length;
             if (*p == isc_info_end) {
-                //PerlIO_printf(PerlIO_stderr(), "isc_info_end encountered at byte: %d\n", (p - result));
+                /* PerlIO_printf(PerlIO_stderr(), "isc_info_end encountered at byte: %d\n", (p - result)); */
                 break;
             }
             switch (*p) {
@@ -420,18 +415,18 @@ ib_tx_info(dbh)
                     keyname = "isolation";
                     HV* reshv;
 
-                    //PerlIO_printf(PerlIO_stderr(), "Got 'isolation' at byte: %d\n", (p - result));
+                    /* PerlIO_printf(PerlIO_stderr(), "Got 'isolation' at byte: %d\n", (p - result)); */
                     ++p;
                     short length = isc_vax_integer(p, 2);
                     p += 2;
-                    //PerlIO_printf(PerlIO_stderr(), "Content length: %d\n", length);
+                    /* PerlIO_printf(PerlIO_stderr(), "Content length: %d\n", length); */
                     
                     if (*p == isc_info_tra_consistency) {
-                        hv_store(RETVAL, keyname, strlen(keyname), newSVpv("consistency", 0), 0);
+                        (void)hv_store(RETVAL, keyname, strlen(keyname), newSVpv("consistency", 0), 0);
                     } else if (*p == isc_info_tra_concurrency) {
-                        hv_store(RETVAL, keyname, strlen(keyname), newSVpv("snapshot (concurrency)", 0), 0);
+                        (void)hv_store(RETVAL, keyname, strlen(keyname), newSVpv("snapshot (concurrency)", 0), 0);
                     } else if (*p == isc_info_tra_read_committed) {
-                        warn("got 'read_committed'");
+                        /* warn("got 'read_committed'"); */
                         reshv = newHV();
                         if (!reshv) {
                             if (result) {
@@ -441,14 +436,14 @@ ib_tx_info(dbh)
                             XSRETURN_UNDEF;
                         }
                         if (*(p + 1) == isc_info_tra_no_rec_version) {
-                            hv_store(reshv, "read_committed", 14, newSVpv("no_rec_version", 0), 0);
+                            (void)hv_store(reshv, "read_committed", 14, newSVpv("no_rec_version", 0), 0);
                         } else if (*(p + 1) == isc_info_tra_rec_version) {
-                            hv_store(reshv, "read_committed", 14, newSVpv("rec_version", 0), 0);
+                            (void)hv_store(reshv, "read_committed", 14, newSVpv("rec_version", 0), 0);
                         } else {
                             warn("unrecognized byte");
                             continue;
                         }
-                        hv_store(RETVAL, keyname, strlen(keyname),
+                        (void)hv_store(RETVAL, keyname, strlen(keyname),
                                  newRV_noinc((SV*) reshv), 0);
 
                     } else {
@@ -459,14 +454,14 @@ ib_tx_info(dbh)
                 }
                 case isc_info_tra_access: {
                     keyname = "access";
-                    //PerlIO_printf(PerlIO_stderr(), "Got 'access' at byte: %d\n", (p - result));
+                    /* PerlIO_printf(PerlIO_stderr(), "Got 'access' at byte: %d\n", (p - result)); */
                     p++;
                     short length = isc_vax_integer(p, 2);
                     p += 2;
                     if (*p == isc_info_tra_readonly) {
-                        hv_store(RETVAL, keyname, strlen(keyname), newSVpvn("readonly", 8), 0);
+                        (void)hv_store(RETVAL, keyname, strlen(keyname), newSVpvn("readonly", 8), 0);
                     } else if (*p == isc_info_tra_readwrite) {
-                        hv_store(RETVAL, keyname, strlen(keyname), newSVpvn("readwrite", 9), 0);
+                        (void)hv_store(RETVAL, keyname, strlen(keyname), newSVpvn("readwrite", 9), 0);
                     }
                     p += length;
                     break;
@@ -507,8 +502,9 @@ ib_set_tx_param(dbh, ...)
     CODE:
 {
     D_imp_dbh(dbh);
+#ifdef PERL_UNUSED_VAR
     PERL_UNUSED_VAR(ix); /* -Wall */
-    
+#endif
     /* if no params or first parameter = 0 or undef -> reset TPB to NULL */
     if (items < 3)
     {
@@ -949,12 +945,12 @@ ib_database_info(dbh, ...)
             /******************************************************************/
             /* database characteristics */
             DB_RESBUF_CASEHDR(allocation)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(base_level)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(++p, 1)), 0);
                 break;
 
@@ -963,20 +959,20 @@ ib_database_info(dbh, ...)
                 HV *reshv = newHV();
                 ISC_LONG slen;
 
-                hv_store(reshv, "connection", 10,
+                (void)hv_store(reshv, "connection", 10,
                          (isc_vax_integer(p++, 1) == 2)?
                              newSVpv("local", 0):
                              newSVpv("remote", 0),
                          0);
 
                 slen = isc_vax_integer(p++, 1);
-                hv_store(reshv, "database", 8, newSVpvn(p, slen), 0);
+                (void)hv_store(reshv, "database", 8, newSVpvn(p, slen), 0);
                 p += slen;
 
                 slen = isc_vax_integer(p++, 1);
-                hv_store(reshv, "site", 8, newSVpvn(p, slen), 0);
+                (void)hv_store(reshv, "site", 8, newSVpvn(p, slen), 0);
 
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newRV_noinc((SV *) reshv), 0);
                 break;
             }
@@ -985,40 +981,40 @@ ib_database_info(dbh, ...)
             {
                 HV *reshv = newHV();
 
-                hv_store(reshv, "implementation", 14,
+                (void)hv_store(reshv, "implementation", 14,
                          newSViv(isc_vax_integer(++p, 1)), 0);
 
-                hv_store(reshv, "class", 5,
+                (void)hv_store(reshv, "class", 5,
                          newSViv(isc_vax_integer(++p, 1)), 0);
 
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newRV_noinc((SV *) reshv), 0);
 
                 break;
             }
 
             DB_RESBUF_CASEHDR(no_reserve)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 #ifdef IB_API_V6
             DB_RESBUF_CASEHDR(db_read_only)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 #endif
             DB_RESBUF_CASEHDR(ods_minor_version)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(ods_version)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(page_size)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
@@ -1026,13 +1022,13 @@ ib_database_info(dbh, ...)
             {
                 ISC_LONG slen;
                 slen = isc_vax_integer(++p, 1);
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSVpvn(++p, slen), 0);
                 break;
             }
 #ifdef isc_dpb_sql_dialect
             DB_RESBUF_CASEHDR(db_sql_dialect)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 #endif
@@ -1040,27 +1036,27 @@ ib_database_info(dbh, ...)
             /******************************************************************/
             /* environmental characteristics */
             DB_RESBUF_CASEHDR(current_memory)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(forced_writes)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(max_memory)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(num_buffers)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(sweep_interval)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
@@ -1074,7 +1070,7 @@ ib_database_info(dbh, ...)
                 if (!hv_exists(RETVAL, "user_names", 10))
                 {
                     avres = newAV();
-                    hv_store(RETVAL, "user_names", 10,
+                    (void)hv_store(RETVAL, "user_names", 10,
                              newRV_noinc((SV *) avres), 0);
                 }
                 else
@@ -1099,28 +1095,28 @@ ib_database_info(dbh, ...)
             /******************************************************************/
             /* performance statistics */
             DB_RESBUF_CASEHDR(fetches)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(marks)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(reads)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
             DB_RESBUF_CASEHDR(writes)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 #if defined(FB_API_VER) && FB_API_VER >= 20
             /* FB 2.0 */
             DB_RESBUF_CASEHDR(active_tran_count)
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                         newSViv(isc_vax_integer(p, (short) length)), 0);
                 break;
 
@@ -1134,7 +1130,7 @@ ib_database_info(dbh, ...)
                 cdatetime.timestamp_time = isc_vax_integer(p + sizeof(ISC_DATE), sizeof(ISC_TIME));
                 isc_decode_timestamp(&cdatetime, &times);
                 strftime(tbuf, sizeof(tbuf), "%c", &times);
-                hv_store(RETVAL, keyname, strlen(keyname),
+                (void)hv_store(RETVAL, keyname, strlen(keyname),
                          newSVpvn(tbuf, strlen(tbuf)), 0);
                 break;
             }
@@ -1374,9 +1370,17 @@ DESTROY(evh)
         isc_cancel_events(status, &(evh->dbh->db), &(evh->id));
     }
     if (evh->event_buffer)
+#ifdef INCLUDE_TYPES_PUB_H 
+        isc_free((ISC_SCHAR*)evh->event_buffer);
+#else
         isc_free(evh->event_buffer);
+#endif
     if (evh->result_buffer)
+#ifdef INCLUDE_TYPES_PUB_H 
+        isc_free((ISC_SCHAR*)evh->result_buffer);
+#else
         isc_free(evh->result_buffer);
+#endif
 }
 
 MODULE = DBD::InterBase     PACKAGE = DBD::InterBase::st

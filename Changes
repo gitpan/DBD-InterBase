@@ -1,6 +1,13 @@
 Revision history for Perl extension DBD::InterBase.
 
-$Id: Changes 381 2007-05-20 15:25:13Z edpratomo $
+$Id: Changes 400 2008-01-08 09:31:13Z edpratomo $
+
+Jan 08, 2008 - edpratomo
+* maintenance release: 0.48
+* fixed link problem when using perl-5.6.x (undefined PERL_UNUSED_VAR)
+* prepare_cached() now works. added t/31prepare.t
+* some code cleanup (compiler warnings suppressed)
+* t/81event-fork.t now checks signal availability
 
 May 20, 2007 - edpratomo
 * fixed retval from ib_set_tx

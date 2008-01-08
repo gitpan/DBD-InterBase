@@ -15,6 +15,7 @@ t/00base.t
 t/10dsnlist.t
 t/20createdrop.t
 t/30insertfetch.t
+t/31prepare.t
 t/40alltypes.t
 t/40datetime.t
 t/40bindparam.t
@@ -31,8 +32,7 @@ t/50commit.t
 t/60leaks.t
 t/61settx.t
 t/62timeout.t
-t/70nestedoff.t
-t/70nestedon.t
+t/70nested-sth.t
 t/80event-ithreads.t
 t/81event-fork.t
 t/90dbinfo.t

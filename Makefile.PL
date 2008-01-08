@@ -1,5 +1,5 @@
 
-#   $Id: Makefile.PL 369 2006-10-23 20:49:10Z edpratomo $
+#   $Id: Makefile.PL 394 2008-01-08 05:29:19Z edpratomo $
 #
 #   Copyright (c) 1999-2005 Edwin Pratomo
 #   Portions Copyright (c) 2001-2005 Daniel Ritz
@@ -329,7 +329,7 @@ my %MakeParams = (
     'VERSION_FROM'  => 'InterBase.pm', # finds $VERSION
     'C'             => ['dbdimp.c'],
     'H'             => ['dbdimp.h', 'InterBase.h'],
-    'CCFLAGS'       => '-Wall',
+    'CCFLAGS'       => '-Wall -fno-strict-aliasing',
     'INC'           => qq(-I"$ib_inc" -I"${\locate_dbi_arch_dir()}"),
     'OBJECT'        => "InterBase.o dbdimp.o",
     'LIBS'          => [''],

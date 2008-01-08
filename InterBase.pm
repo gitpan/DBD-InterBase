@@ -1,6 +1,6 @@
-#   $Id: InterBase.pm 372 2006-10-25 18:17:44Z edpratomo $
+#   $Id: InterBase.pm 399 2008-01-08 08:51:35Z edpratomo $
 #
-#   Copyright (c) 1999-2006 Edwin Pratomo
+#   Copyright (c) 1999-2008 Edwin Pratomo
 #
 #   You may distribute under the terms of either the GNU General Public
 #   License or the Artistic License, as specified in the Perl README file,
@@ -19,7 +19,7 @@ require Exporter;
 require DynaLoader;
 
 @ISA = qw(Exporter DynaLoader);
-$VERSION = '0.47';
+$VERSION = '0.48';
 
 bootstrap DBD::InterBase $VERSION;
 
@@ -1141,8 +1141,8 @@ much alike:
      $dbh->commit;
  }
 
-You may also use $dbh->{ib_softcommit} introduced in version 0.30, please consult
-t/70nestedon.t for an example on how to use it.
+You may also use $dbh->{ib_softcommit} introduced in version 0.30, please check
+t/70nested-sth.t for an example on how to use it.
 
 =head2 Why do placeholders fail to bind, generating unknown datatype error message?
 
@@ -1327,6 +1327,9 @@ This module is originally based on the work of Bill Karwin's IBPerl.
 
 =head1 BUGS/LIMITATIONS
 
+Please report bugs and feature suggestions using 
+http://rt.cpan.org/Public/Dist/Display.html?Name=DBD-InterBase.
+
 This module doesn't work with MSWin32 ActivePerl iThreads, and its emulated
 fork. Tested with MSWin32 ActivePerl build 809 (Perl 5.8.3). The whole
 process will block in unpredictable manner.
@@ -1359,7 +1362,7 @@ DBI(3).
 
 =head1 COPYRIGHT
 
-The DBD::InterBase module is Copyright (c) 1999-2006 Edwin Pratomo.
+The DBD::InterBase module is Copyright (c) 1999-2008 Edwin Pratomo.
 Portions Copyright (c) 2001-2005 Daniel Ritz.
 
 The DBD::InterBase module is free software. 

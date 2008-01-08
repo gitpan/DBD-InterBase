@@ -1,7 +1,7 @@
 /*
-   $Id: dbdimp.h 365 2006-10-16 06:54:51Z edpratomo $
+   $Id: dbdimp.h 395 2008-01-08 05:33:11Z edpratomo $
 
-   Copyright (c) 1999-2005  Edwin Pratomo
+   Copyright (c) 1999-2008  Edwin Pratomo
    Portions Copyright (c) 2001-2005  Daniel Ritz
 
    You may distribute under the terms of either the GNU General Public

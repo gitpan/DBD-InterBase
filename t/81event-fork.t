@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl -w
 #
-#   $Id: 81event-fork.t 356 2005-09-12 02:44:29Z edpratomo $
+#   $Id: 81event-fork.t 397 2008-01-08 05:58:49Z edpratomo $
 #
 
 use strict;
@@ -69,6 +69,9 @@ DDL
     ok($dbh->do($_)) foreach @ddl; # 3 times
 }
 
+# detect SIGNAL availability
+my $sig_ok = grep { /HUP$/ } split(/ /, $Config{sig_name});
+
 $dbh->{InactiveDestroy} = 1;
 
 # try fork
@@ -76,6 +79,7 @@ $dbh->{InactiveDestroy} = 1;
     my $how_many = 8;
 SKIP: {
     skip "known problems under MSWin32 ActivePerl's emulated fork()", $how_many if $Config{osname} eq 'MSWin32';
+    skip "SIGHUP is not avalailable", $how_many unless $sig_ok;
     my $pid = fork;
     skip "failed to fork", $how_many unless defined $pid;
 
